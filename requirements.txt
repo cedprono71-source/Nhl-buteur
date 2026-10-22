@@ -2,4 +2,4 @@ fastapi
 uvicorn
 requests
 pydantic
-
+google-genai
