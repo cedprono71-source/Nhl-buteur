@@ -1,1 +1,244 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NHL GoalScorer Analytics</title>
+    <style>
+        :root {
+            --bg-main: #0b0e14;
+            --bg-card: #141a23;
+            --bg-card-hover: #1c2431;
+            --accent: #ff4757;
+            --accent-glow: rgba(255, 71, 87, 0.3);
+            --text-main: #ffffff;
+            --text-muted: #8b9bb4;
+            --border: #222d3d;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: var(--bg-main); color: var(--text-main); padding: 12px; max-width: 480px; margin: 0 auto; }
+
+        header { text-align: center; margin-bottom: 20px; padding-top: 10px; }
+        h1 { font-size: 1.35rem; color: var(--accent); letter-spacing: 0.5px; margin-bottom: 4px; }
+        p.subtitle { font-size: 0.8rem; color: var(--text-muted); }
+
+        .date-picker-container { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 16px; background: var(--bg-card); padding: 8px; border-radius: 12px; border: 1px solid var(--border); }
+        .date-picker-container input { background: transparent; border: none; color: var(--text-main); font-size: 0.95rem; font-weight: 600; outline: none; color-scheme: dark; }
+
+        .matches-list { display: flex; flex-direction: column; gap: 10px; }
+        .match-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; cursor: pointer; transition: all 0.2s ease; display: flex; justify-content: space-between; align-items: center; }
+        .match-card:hover { border-color: var(--accent); background: var(--bg-card-hover); }
+
+        .team-info { display: flex; align-items: center; gap: 10px; width: 40%; }
+        .team-info.away { justify-content: flex-end; text-align: right; }
+        .team-logo { width: 32px; height: 32px; object-fit: contain; }
+        .team-name { font-size: 0.85rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        .match-vs { text-align: center; font-size: 0.75rem; color: var(--text-muted); font-weight: bold; width: 20%; }
+        .match-status { font-size: 0.75rem; background: rgba(255,255,255,0.05); padding: 3px 6px; border-radius: 6px; color: var(--accent); margin-top: 2px; display: inline-block; }
+
+        /* Modal */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 1000; overflow-y: auto; padding: 12px; }
+        .modal-content { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; max-width: 440px; margin: 20px auto; padding: 16px; position: relative; }
+        .close-btn { position: absolute; top: 14px; right: 16px; font-size: 1.2rem; cursor: pointer; color: var(--text-muted); }
+
+        .modal-header { text-align: center; margin-bottom: 16px; font-size: 1.1rem; font-weight: bold; color: var(--accent); }
+        
+        .team-tabs { display: flex; gap: 8px; margin-bottom: 12px; background: var(--bg-main); padding: 4px; border-radius: 10px; border: 1px solid var(--border); }
+        .team-tab-btn { flex: 1; background: transparent; border: none; color: var(--text-muted); padding: 8px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 0.85rem; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; }
+        .team-tab-btn.active { background: var(--accent); color: white; }
+
+        .scorer-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+        .scorer-row:last-child { border-bottom: none; }
+        .scorer-name { font-weight: 600; color: #fff; }
+        .scorer-sub { font-size: 0.75rem; color: var(--text-muted); }
+        .scorer-badge { background: var(--accent-glow); color: var(--accent); padding: 3px 8px; border-radius: 6px; font-weight: bold; font-size: 0.8rem; border: 1px solid rgba(255, 71, 87, 0.4); }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>🏒 NHL GoalScorer</h1>
+        <p class="subtitle">Analyse des meilleurs buteurs potentiels</p>
+    </header>
+
+    <div class="date-picker-container">
+        <label for="match-date" style="font-size:0.85rem; color:var(--text-muted);">Date :</label>
+        <input type="date" id="match-date" onchange="loadMatches()">
+    </div>
+
+    <div id="matches-container" class="matches-list">
+        <div style="text-align: center; color: var(--text-muted); padding: 20px;">Chargement des matchs...</div>
+    </div>
+
+    <!-- Modale de détail des buteurs -->
+    <div id="prono-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeModal()">&times;</span>
+            <div id="modal-title" class="modal-header">Analyse des Buteurs</div>
+            
+            <div class="team-tabs">
+                <button id="tab-home" class="team-tab-btn active" onclick="switchTab('home')">
+                    <img id="img-tab-home" src="" style="width:20px; height:20px; object-fit:contain;" onerror="this.style.display='none'"> 
+                    <span id="txt-tab-home">Domicile</span>
+                </button>
+                <button id="tab-away" class="team-tab-btn" onclick="switchTab('away')">
+                    <img id="img-tab-away" src="" style="width:20px; height:20px; object-fit:contain;" onerror="this.style.display='none'"> 
+                    <span id="txt-tab-away">Extérieur</span>
+                </button>
+            </div>
+
+            <div style="font-size: 0.78em; color: var(--text-muted); display: flex; justify-content: space-between; margin-bottom: 6px; padding: 0 4px;">
+                <span>Joueur / Position</span>
+                <span>Cote / Probabilité</span>
+            </div>
+
+            <div id="list-home" style="display: block;"></div>
+            <div id="list-away" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentModalData = null;
+
+        document.addEventListener("DOMContentLoaded", () => {
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('match-date').value = today;
+            loadMatches();
+        });
+
+        async function loadMatches() {
+            const dateVal = document.getElementById('match-date').value;
+            const container = document.getElementById('matches-container');
+            container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 20px;">Recherche des matchs...</div>';
+
+            try {
+                const res = await fetch(`/api/matches/nhl?date=${dateVal}`);
+                const data = await res.json();
+                
+                if (!data.matches || data.matches.length === 0) {
+                    container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 20px;">Aucun match prévu ce jour-là.</div>';
+                    return;
+                }
+
+                let html = '';
+                data.matches.forEach(m => {
+                    html += `
+                        <div class="match-card" onclick="openGoalscorers('${m.home_team.replace(/'/g, "\\'")}', '${m.away_team.replace(/'/g, "\\'")}')">
+                            <div class="team-info">
+                                <img src="${m.home_logo}" class="team-logo" onerror="this.style.display='none'">
+                                <span class="team-name">${m.home_team}</span>
+                            </div>
+                            <div class="match-vs">
+                                VS
+                                <br><span class="match-status">${m.game_state}</span>
+                            </div>
+                            <div class="team-info away">
+                                <span class="team-name">${m.away_team}</span>
+                                <img src="${m.away_logo}" class="team-logo" onerror="this.style.display='none'">
+                            </div>
+                        </div>
+                    `;
+                });
+                container.innerHTML = html;
+            } catch (err) {
+                container.innerHTML = '<div style="text-align: center; color: var(--accent); padding: 20px;">Erreur de chargement des matchs.</div>';
+            }
+        }
+
+        async function openGoalscorers(home, away) {
+            const modal = document.getElementById('prono-modal');
+            modal.style.display = 'block';
+            document.getElementById('modal-title').innerText = `${home} vs ${away}`;
+            
+            document.getElementById('txt-tab-home').innerText = home;
+            document.getElementById('txt-tab-away').innerText = away;
+            document.getElementById('list-home').innerHTML = '<div style="text-align:center; padding:15px; color:var(--text-muted);">Analyse des lignes offensives...</div>';
+            document.getElementById('list-away').innerHTML = '';
+
+            try {
+                const res = await fetch('/predict/goalscorers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ home_team: home, away_team: away })
+                });
+                const data = await res.json();
+                currentModalData = data;
+
+                document.getElementById('img-tab-home').src = data.home_logo;
+                document.getElementById('img-tab-away').src = data.away_logo;
+
+                let homeHtml = '';
+                data.top_goalscorers_home.forEach(p => {
+                    homeHtml += `
+                        <div class="scorer-row">
+                            <div>
+                                <div class="scorer-name">${p.name} (${p.pos})</div>
+                                <div class="scorer-sub">${p.stats}</div>
+                            </div>
+                            <div style="text-align: right;">
+                                <span class="scorer-badge">${p.prob}</span>
+                                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Cote ~${p.odds}</div>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                let awayHtml = '';
+                data.top_goalscorers_away.forEach(p => {
+                    awayHtml += `
+                        <div class="scorer-row">
+                            <div>
+                                <div class="scorer-name">${p.name} (${p.pos})</div>
+                                <div class="scorer-sub">${p.stats}</div>
+                            </div>
+                            <div style="text-align: right;">
+                                <span class="scorer-badge">${p.prob}</span>
+                                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Cote ~${p.odds}</div>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                document.getElementById('list-home').innerHTML = homeHtml;
+                document.getElementById('list-away').innerHTML = awayHtml;
+
+            } catch (err) {
+                document.getElementById('list-home').innerHTML = '<div style="color:var(--accent); text-align:center;">Erreur lors de la récupération des données.</div>';
+            }
+        }
+
+        function switchTab(team) {
+            const btnHome = document.getElementById('tab-home');
+            const btnAway = document.getElementById('tab-away');
+            const listHome = document.getElementById('list-home');
+            const listAway = document.getElementById('list-away');
+
+            if (team === 'home') {
+                btnHome.classList.add('active');
+                btnAway.classList.remove('active');
+                listHome.style.display = 'block';
+                listAway.style.display = 'none';
+            } else {
+                btnAway.classList.add('active');
+                btnHome.classList.remove('active');
+                listAway.style.display = 'block';
+                listHome.style.display = 'none';
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('prono-modal').style.display = 'none';
+        }
+
+        window.onclick = function(event) {
+            const modal = document.getElementById('prono-modal');
+            if (event.target == modal) {
+                closeModal();
+            }
+        }
+    </script>
+</body>
+</html>
 
