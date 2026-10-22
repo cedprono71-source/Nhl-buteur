@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-app = FastAPI(title="NHL GoalScorer Analytics API", version="2.1.0")
+app = FastAPI(title="NHL GoalScorer Analytics API", version="2.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -139,12 +139,23 @@ def fetch_top_goalscorers(team_str: str):
                     prob_val = max(25, min(78, int(base_prob)))
                     odds_val = round(1.70 + ((100 - prob_val) / 22), 2)
 
+                    # Attribution dynamique d'un indice de confiance (étoiles) basé sur la proba
+                    if prob_val >= 65:
+                        conf = "⭐⭐⭐⭐⭐ (Très Fort)"
+                    elif prob_val >= 55:
+                        conf = "⭐⭐⭐⭐ (Recommandé)"
+                    elif prob_val >= 45:
+                        conf = "⭐⭐⭐ (Intéressant)"
+                    else:
+                        conf = "⭐⭐ (Risqué)"
+
                     scorers.append({
                         "name": f"{first} {last}".strip(),
                         "pos": pos,
                         "stats": f"{goals} buts ({games_played} m)",
                         "prob": f"{prob_val}%",
                         "odds": f"{odds_val}",
+                        "confidence": conf,
                         "sort_val": prob_val
                     })
             
@@ -157,20 +168,38 @@ def fetch_top_goalscorers(team_str: str):
     except Exception:
         pass
     
-    return [{"name": f"Attaquant Clé ({team_str})", "pos": "F", "stats": "Stats en cours", "prob": "45%", "odds": "2.10"}]
+    return [{
+        "name": f"Attaquant Clé ({team_str})", 
+        "pos": "F", 
+        "stats": "Stats en cours", 
+        "prob": "45%", 
+        "odds": "2.10", 
+        "confidence": "⭐⭐⭐ (Intéressant)"
+    }]
 
-def generate_ai_commentary(home_team: str, away_team: str, home_scorers: list, away_scorers: list):
-    """Génère une analyse tactique experte basée sur les profils des meilleurs buteurs."""
-    top_home = home_scorers[0]['name'] if home_scorers else "l'attaquant vedette"
-    top_away = away_scorers[0]['name'] if away_scorers else "l'attaquant vedette"
-    
-    commentary = (
-        f"Analyse tactique IA : Ce duel entre les {home_team} et les {away_team} s'annonce ouvert. "
-        f"Côté domicile, l'animation offensive repose fortement sur la dynamique de {top_home}, dont les statistiques de tirs et de conversion pèsent lourdement sur la défense adverse. "
-        f"En face, la réplique des {away_team} pourrait venir de {top_away}, capable de capitaliser sur la moindre transition rapide. "
-        f"Privilégiez les options à forte valeur sur les attaquants de pointe de premier trio."
+def generate_ai_prediction(home_team: str, away_team: str, home_scorers: list, away_scorers: list):
+    """IA Pronostiqueur : Sélectionne le meilleur coup du match et génère le conseil."""
+    # Combine tous les buteurs pour trouver la plus haute probabilité globale
+    all_players = []
+    for p in home_scorers:
+        all_players.append({**p, "team": home_team})
+    for p in away_scorers:
+        all_players.append({**p, "team": away_team})
+        
+    if not all_players:
+        return "Pronostic IA : Match serré, prudence conseillée sur les buteurs."
+
+    # Trie par probabilité décroissante
+    all_players.sort(key=lambda x: int(x['prob'].replace('%', '')), reverse=True)
+    best_pick = all_players[0]
+
+    insight = (
+        f"🎯 **Pronostic IA du Match** : Le meilleur coup de la rencontre est **{best_pick['name']}** "
+        f"({best_pick['team']}) avec une probabilité estimée à **{best_pick['prob']}** (Cote ~{best_pick['odds']}). "
+        f"Indice de confiance : {best_pick['confidence']}. "
+        f"Analyse tactique : Sa dynamique actuelle sur le front de l'attaque en fait la cible prioritaire pour un pari Anytime Goalscorer."
     )
-    return commentary
+    return insight
 
 @app.post("/predict/goalscorers")
 def predict_goalscorers(req: MatchRequest):
@@ -183,7 +212,7 @@ def predict_goalscorers(req: MatchRequest):
         home_scorers = f_home.result()
         away_scorers = f_away.result()
 
-    ai_insight = generate_ai_commentary(req.home_team, req.away_team, home_scorers, away_scorers)
+    ai_insight = generate_ai_prediction(req.home_team, req.away_team, home_scorers, away_scorers)
 
     return {
         "match": f"{req.home_team} vs {req.away_team}",
