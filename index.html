@@ -45,6 +45,8 @@
 
         .modal-header { text-align: center; margin-bottom: 16px; font-size: 1.1rem; font-weight: bold; color: var(--accent); }
         
+        .ai-insight-box { background: rgba(255, 71, 87, 0.08); border: 1px dashed rgba(255, 71, 87, 0.4); border-radius: 10px; padding: 10px; margin-bottom: 14px; font-size: 0.8rem; color: #dcdde1; line-height: 1.4; }
+
         .team-tabs { display: flex; gap: 8px; margin-bottom: 12px; background: var(--bg-main); padding: 4px; border-radius: 10px; border: 1px solid var(--border); }
         .team-tab-btn { flex: 1; background: transparent; border: none; color: var(--text-muted); padding: 8px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 0.85rem; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; }
         .team-tab-btn.active { background: var(--accent); color: white; }
@@ -78,6 +80,11 @@
             <span class="close-btn" onclick="closeModal()">&times;</span>
             <div id="modal-title" class="modal-header">Analyse des Buteurs</div>
             
+            <!-- Analyse IA -->
+            <div id="ai-insight-box" class="ai-insight-box">
+                Chargement de l'analyse tactique IA...
+            </div>
+
             <div class="team-tabs">
                 <button id="tab-home" class="team-tab-btn active" onclick="switchTab('home')">
                     <img id="img-tab-home" src="" style="width:20px; height:20px; object-fit:contain;" onerror="this.style.display='none'"> 
@@ -152,6 +159,7 @@
             modal.style.display = 'block';
             document.getElementById('modal-title').innerText = `${home} vs ${away}`;
             
+            document.getElementById('ai-insight-box').innerText = "Analyse tactique IA en cours...";
             document.getElementById('txt-tab-home').innerText = home;
             document.getElementById('txt-tab-away').innerText = away;
             document.getElementById('list-home').innerHTML = '<div style="text-align:center; padding:15px; color:var(--text-muted);">Analyse des lignes offensives...</div>';
@@ -166,6 +174,7 @@
                 const data = await res.json();
                 currentModalData = data;
 
+                document.getElementById('ai-insight-box').innerText = data.ai_insight;
                 document.getElementById('img-tab-home').src = data.home_logo;
                 document.getElementById('img-tab-away').src = data.away_logo;
 
@@ -205,6 +214,7 @@
                 document.getElementById('list-away').innerHTML = awayHtml;
 
             } catch (err) {
+                document.getElementById('ai-insight-box').innerText = "Impossible de charger l'analyse IA.";
                 document.getElementById('list-home').innerHTML = '<div style="color:var(--accent); text-align:center;">Erreur lors de la récupération des données.</div>';
             }
         }
@@ -241,4 +251,3 @@
     </script>
 </body>
 </html>
-
