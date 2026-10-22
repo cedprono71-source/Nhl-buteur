@@ -1,15 +1,13 @@
 import os
-import hashlib
 import requests
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-app = FastAPI(title="NHL GoalScorer Analytics API", version="1.0.0")
+app = FastAPI(title="NHL GoalScorer Analytics API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -114,42 +112,60 @@ def get_nhl_matches(date: str = None):
 def fetch_top_goalscorers(team_str: str):
     abbr = get_nhl_abbr(team_str)
     try:
-        url = f"https://api-web.nhle.com/v1/roster/{abbr}/current"
-        response = requests.get(url, timeout=4)
+        # Récupération des statistiques des joueurs de l'équipe pour la saison en cours
+        url = f"https://api-web.nhle.com/v1/club-stats/{abbr}/now"
+        response = requests.get(url, timeout=5)
+        
+        scorers = []
         if response.status_code == 200:
             data = response.json()
-            scorers = []
-            for p in data.get('forwards', []):
-                first_dict = p.get('firstName', {})
-                last_dict = p.get('lastName', {})
-                first = first_dict.get('default', '') if isinstance(first_dict, dict) else str(first_dict)
-                last = last_dict.get('default', '') if isinstance(last_dict, dict) else str(last_dict)
-                
-                if not last: 
-                    continue
-                
-                num = p.get('sweaterNumber', '')
-                pos = p.get('positionCode', 'F')
-                
-                hash_val = abs(hash(f"goal-{abbr}-{last}"))
-                prob_val = 30 + (hash_val % 45) 
-                odds_val = round(1.80 + ((100 - prob_val) / 25), 2)
+            skaters = data.get('skaters', [])
+            
+            # Filtrer pour ne garder que les attaquants (Forwards) ayant joué
+            for p in skaters:
+                pos = p.get('positionCode', '')
+                if pos in ['L', 'R', 'C', 'F']:
+                    first = p.get('firstName', {}).get('default', '')
+                    last = p.get('lastName', {}).get('default', '')
+                    goals = p.get('goals', 0)
+                    games_played = p.get('gamesPlayed', 1)
+                    shots = p.get('shots', 0)
+                    
+                    if games_played == 0:
+                        continue
+                    
+                    # --- Modèle Statistique Analytique ---
+                    # Calcul du taux de conversion des tirs et de la moyenne de buts par match
+                    goals_per_game = goals / games_played
+                    shooting_pct = (goals / shots) * 100 if shots > 0 else 10.0
+                    
+                    # Formule prédictive de probabilité (bornée entre 25% et 78%)
+                    base_prob = 30 + (goals_per_game * 45) + (shooting_pct * 0.5)
+                    prob_val = max(25, min(78, int(base_prob)))
+                    
+                    # Calcul de la cote décimale équivalente
+                    odds_val = round(1.70 + ((100 - prob_val) / 22), 2)
 
-                scorers.append({
-                    "name": f"{first} {last}".strip(),
-                    "pos": pos,
-                    "stats": f"#{num}" if num else "Attaquant",
-                    "prob": f"{prob_val}%",
-                    "odds": f"{odds_val}"
-                })
+                    scorers.append({
+                        "name": f"{first} {last}".strip(),
+                        "pos": pos,
+                        "stats": f"{goals} buts ({games_played} m)",
+                        "prob": f"{prob_val}%",
+                        "odds": f"{odds_val}",
+                        "sort_val": prob_val
+                    })
             
             if scorers:
-                scorers.sort(key=lambda x: int(x['prob'].replace('%', '')), reverse=True)
+                # Tri des meilleurs buteurs du plus haut au plus bas
+                scorers.sort(key=lambda x: x['sort_val'], reverse=True)
+                for s in scorers:
+                    del s['sort_val'] # Nettoyage du champ temporaire de tri
                 return scorers[:6]
+
     except Exception:
         pass
     
-    return [{"name": f"Sniper ({team_str})", "pos": "F", "stats": "Élite", "prob": "45%", "odds": "2.10"}]
+    return [{"name": f"Attaquant Clé ({team_str})", "pos": "F", "stats": "Stats en cours", "prob": "45%", "odds": "2.10"}]
 
 @app.post("/predict/goalscorers")
 def predict_goalscorers(req: MatchRequest):
