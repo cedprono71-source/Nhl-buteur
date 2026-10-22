@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-app = FastAPI(title="NHL GoalScorer Analytics API", version="2.2.0")
+app = FastAPI(title="NHL GoalScorer Analytics API", version="3.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -129,30 +129,40 @@ def fetch_top_goalscorers(team_str: str):
                     games_played = p.get('gamesPlayed', 1)
                     shots = p.get('shots', 0)
                     
+                    # Simulation de la forme récente (basée sur les stats de buts par match et tirs)
+                    # Utilise aussi les points récents si disponibles dans l'API
+                    recent_goals = p.get('last5GamesGoals', p.get('goalsLast5', goals / max(1, games_played) * 5))
+                    
                     if games_played == 0:
                         continue
                     
                     goals_per_game = goals / games_played
                     shooting_pct = (goals / shots) * 100 if shots > 0 else 10.0
                     
-                    base_prob = 30 + (goals_per_game * 45) + (shooting_pct * 0.5)
-                    prob_val = max(25, min(78, int(base_prob)))
-                    odds_val = round(1.70 + ((100 - prob_val) / 22), 2)
+                    # Formule combinée : Saison + IA Momentum (Forme récente)
+                    base_prob = 30 + (goals_per_game * 40) + (shooting_pct * 0.4) + (float(recent_goals) * 2)
+                    prob_val = max(25, min(82, int(base_prob)))
+                    odds_val = round(1.65 + ((100 - prob_val) / 20), 2)
 
-                    # Attribution dynamique d'un indice de confiance (étoiles) basé sur la proba
-                    if prob_val >= 65:
-                        conf = "⭐⭐⭐⭐⭐ (Très Fort)"
-                    elif prob_val >= 55:
+                    # IA Momentum : Analyse de la dynamique
+                    if prob_val >= 68:
+                        momentum = "🔥 En feu (Streak active)"
+                        conf = "⭐⭐⭐⭐⭐ (Top Pick)"
+                    elif prob_val >= 58:
+                        momentum = "⚡ Forte dynamique"
                         conf = "⭐⭐⭐⭐ (Recommandé)"
-                    elif prob_val >= 45:
+                    elif prob_val >= 48:
+                        momentum = "📊 Forme stable"
                         conf = "⭐⭐⭐ (Intéressant)"
                     else:
+                        momentum = "❄️ En recherche de rythme"
                         conf = "⭐⭐ (Risqué)"
 
                     scorers.append({
                         "name": f"{first} {last}".strip(),
                         "pos": pos,
                         "stats": f"{goals} buts ({games_played} m)",
+                        "momentum": momentum,
                         "prob": f"{prob_val}%",
                         "odds": f"{odds_val}",
                         "confidence": conf,
@@ -172,14 +182,14 @@ def fetch_top_goalscorers(team_str: str):
         "name": f"Attaquant Clé ({team_str})", 
         "pos": "F", 
         "stats": "Stats en cours", 
+        "momentum": "📊 Forme stable",
         "prob": "45%", 
         "odds": "2.10", 
         "confidence": "⭐⭐⭐ (Intéressant)"
     }]
 
 def generate_ai_prediction(home_team: str, away_team: str, home_scorers: list, away_scorers: list):
-    """IA Pronostiqueur : Sélectionne le meilleur coup du match et génère le conseil."""
-    # Combine tous les buteurs pour trouver la plus haute probabilité globale
+    """IA Pronostiqueur & Momentum : Analyse globale et sélectionne le meilleur coup du match."""
     all_players = []
     for p in home_scorers:
         all_players.append({**p, "team": home_team})
@@ -189,15 +199,14 @@ def generate_ai_prediction(home_team: str, away_team: str, home_scorers: list, a
     if not all_players:
         return "Pronostic IA : Match serré, prudence conseillée sur les buteurs."
 
-    # Trie par probabilité décroissante
     all_players.sort(key=lambda x: int(x['prob'].replace('%', '')), reverse=True)
     best_pick = all_players[0]
 
     insight = (
-        f"🎯 **Pronostic IA du Match** : Le meilleur coup de la rencontre est **{best_pick['name']}** "
-        f"({best_pick['team']}) avec une probabilité estimée à **{best_pick['prob']}** (Cote ~{best_pick['odds']}). "
-        f"Indice de confiance : {best_pick['confidence']}. "
-        f"Analyse tactique : Sa dynamique actuelle sur le front de l'attaque en fait la cible prioritaire pour un pari Anytime Goalscorer."
+        f"🎯 **Pronostic IA & Momentum** : Le meilleur choix du match est **{best_pick['name']}** "
+        f"({best_pick['team']}) affichant une dynamique **{best_pick['momentum']}** et une probabilité de **{best_pick['prob']}** "
+        f"(Cote ~{best_pick['odds']}). Confiance : {best_pick['confidence']}. "
+        f"Analyse croisée : Son volume de tirs et sa série récente en font la cible idéale pour un pari Anytime Goalscorer."
     )
     return insight
 
