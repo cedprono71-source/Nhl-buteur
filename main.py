@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from google import genai  # SDK officiel Google GenAI
 
-app = FastAPI(title="NHL GoalScorer Analytics API", version="4.5.0")
+app = FastAPI(title="NHL GoalScorer Analytics API", version="4.6.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,11 +29,12 @@ class MatchRequest(BaseModel):
     home_team: str
     away_team: str
 
+# Dictionnaire complet des abréviations NHL
 TEAM_MAP = {
     "MONTREAL": "MTL", "CANADIENS": "MTL", "MTL": "MTL",
     "TORONTO": "TOR", "MAPLE LEAFS": "TOR", "TOR": "TOR",
     "BOSTON": "BOS", "BRUINS": "BOS", "BOS": "BOS",
-    "NEW YORK": "NYR", "RANGERS": "NYR", "NYR": "NYR",
+    "NEW YORK RANGERS": "NYR", "RANGERS": "NYR", "NYR": "NYR",
     "SAN JOSE": "SJS", "SHARKS": "SJS", "SJS": "SJS",
     "EDMONTON": "EDM", "OILERS": "EDM", "EDM": "EDM",
     "VANCOUVER": "VAN", "CANUCKS": "VAN", "VAN": "VAN",
@@ -64,12 +65,16 @@ TEAM_MAP = {
 }
 
 def get_nhl_abbr(team_str: str) -> str:
-    upper_team = team_str.upper()
+    upper_team = team_str.upper().strip()
+    # Vérification exacte d'abord
+    if upper_team in TEAM_MAP:
+        return TEAM_MAP[upper_team]
+    # Recherche partielle ensuite
     for key, code in TEAM_MAP.items():
         if key in upper_team:
             return code
-    if len(team_str.strip()) == 3:
-        return team_str.strip().upper()
+    if len(upper_team) == 3:
+        return upper_team
     return "MTL"
 
 @app.get("/", response_class=HTMLResponse)
@@ -191,27 +196,29 @@ def fetch_top_goalscorers(team_str: str):
     }]
 
 def generate_gemini_ai_insight(home_team: str, away_team: str, home_scorers: list, away_scorers: list):
-    """Génère une analyse experte unique et dynamique pour chaque match."""
+    """Génère une analyse experte unique et variée pour chaque match."""
     if not ai_client:
         return f"🎯 **Pronostic IA** : Client Gemini non initialisé."
         
     try:
-        # On force l'IA à analyser précisément les données uniques des deux équipes du match
         prompt = f"""
         Tu es un analyste expert en paris sportifs et un spécialiste de la Ligue Nationale de Hockey (NHL).
-        Analyse de manière unique et spécifique le match du jour opposant l'équipe à domicile '{home_team}' à l'équipe visiteuse '{away_team}'.
+        Rédige une analyse complètement unique et personnalisée pour le match opposant '{home_team}' (à domicile) à '{away_team}' (à l'extérieur).
         
-        Voici les meilleurs buteurs et leurs statistiques actuelles pour ce match précis :
+        Voici les meilleurs buteurs et statistiques spécifiques pour ce match :
         - Équipe Domicile ({home_team}) : {home_scorers[:3]}
         - Équipe Extérieur ({away_team}) : {away_scorers[:3]}
         
-        Rédige un pronostic court, percutant et 100% personnalisé pour ce match (maximum 3-4 phrases en français) pour un pari "Anytime Goalscorer". 
-        Cite explicitement les noms des joueurs de ce match précis, leurs probabilités, et donne ton avis d'expert. Utilise des balises markdown en gras (**texte**) pour les noms et les cotes. Ne fais pas de réponse générique.
+        Rédige un pronostic court, percutant et professionnel (maximum 3-4 phrases en français) pour un pari "Anytime Goalscorer". 
+        Cite explicitement les joueurs de ce match précis, leurs probabilités, et donne ton avis d'expert. Utilise des balises markdown en gras (**texte**) pour les noms et les cotes. Ne fais jamais de réponse passe-partout.
         """
         
         response = ai_client.models.generate_content(
             model='gemini-3.8-flash',
             contents=prompt,
+            config={
+                'temperature': 1.1,  # Force l'IA à varier ses tournures de phrases à chaque match
+            }
         )
         if response and response.text:
             return response.text.strip()
@@ -220,13 +227,13 @@ def generate_gemini_ai_insight(home_team: str, away_team: str, home_scorers: lis
         print(f"ERREUR API GEMINI : {error_msg}")
         
         if "503" in error_msg or "high demand" in error_msg:
-            top_player = home_scorers[0]['name'] if home_scorers else "l'attaquant vedette"
+            top_player = home_scorers[0]['name'] if home_scorers else "l'attaquant clé"
             top_odds = home_scorers[0]['odds'] if home_scorers else "2.10"
-            return f"🎯 **Pronostic IA (Mode Statistiques)** : Pour le choc **{home_team}** vs **{away_team}**, **{top_player}** dégage le meilleur profil statistique (cote estimée à **{top_odds}**)."
+            return f"🎯 **Pronostic IA (Mode Statistiques)** : Pour l'affiche **{home_team}** vs **{away_team}**, **{top_player}** présente la meilleure valeur statistique avec une cote de **{top_odds}**."
             
-        return f"🎯 **Pronostic IA** : Analyse tactique en cours pour {home_team} face à {away_team}."
+        return f"🎯 **Pronostic IA** : Analyse tactique en cours pour la rencontre {home_team} contre {away_team}."
     
-    return f"🎯 **Pronostic IA** : Analyse non disponible pour l'instant."
+    return f"🎯 **Pronostic IA** : Analyse non disponible."
 
 @app.post("/predict/goalscorers")
 def predict_goalscorers(req: MatchRequest):
