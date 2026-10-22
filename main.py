@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from google import genai  # SDK officiel Google GenAI
 
-app = FastAPI(title="NHL GoalScorer Analytics API", version="4.2.0")
+app = FastAPI(title="NHL GoalScorer Analytics API", version="4.3.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -191,7 +191,7 @@ def fetch_top_goalscorers(team_str: str):
     }]
 
 def generate_gemini_ai_insight(home_team: str, away_team: str, home_scorers: list, away_scorers: list):
-    """Génère une analyse experte dynamique via l'API Gemini avec capture d'erreur détaillée."""
+    """Génère une analyse experte dynamique via l'API Gemini (modèle gemini-3.8-flash)."""
     if not ai_client:
         return f"🎯 **Pronostic IA (Erreur)** : Client Gemini non initialisé (clé manquante ou incorrecte)."
         
@@ -209,7 +209,7 @@ def generate_gemini_ai_insight(home_team: str, away_team: str, home_scorers: lis
         """
         
         response = ai_client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.8-flash',  # Modèle mis à jour
             contents=prompt,
         )
         if response and response.text:
