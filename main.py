@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from google import genai  # SDK officiel Google GenAI
 
-app = FastAPI(title="NHL GoalScorer Analytics API", version="4.0.0")
+app = FastAPI(title="NHL GoalScorer Analytics API", version="4.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -18,8 +18,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialisation du client Gemini (récupère automatiquement la variable d'env GEMINI_API_KEY)
-ai_client = genai.Client()
+# Initialisation sécurisée du client Gemini (évite le plantage du serveur si la clé n'est pas encore lue)
+try:
+    ai_client = genai.Client()
+except Exception as e:
+    print(f"Attention: Client Gemini non initialisé ({e})")
+    ai_client = None
 
 class MatchRequest(BaseModel):
     home_team: str
@@ -187,7 +191,10 @@ def fetch_top_goalscorers(team_str: str):
     }]
 
 def generate_gemini_ai_insight(home_team: str, away_team: str, home_scorers: list, away_scorers: list):
-    """Génère une analyse experte dynamique via l'API Gemini de Google."""
+    """Génère une analyse experte dynamique via l'API Gemini de Google (sécurisée)."""
+    if not ai_client:
+        return f"🎯 **Pronostic IA** : Match ouvert entre {home_team} et {away_team}. Privilégiez les attaquants de premier plan."
+        
     try:
         prompt = f"""
         Tu es un analyste expert en paris sportifs et un spécialiste de la Ligue Nationale de Hockey (NHL).
@@ -197,11 +204,10 @@ def generate_gemini_ai_insight(home_team: str, away_team: str, home_scorers: lis
         - Équipe {home_team} : {home_scorers[:3]}
         - Équipe {away_team} : {away_scorers[:3]}
         
-        Rédige un pronostic court, percutant et professionnel (en français, maximum 3-4 phrases) pour un pari "Anytime Goalscorer" (buteur n'importe quand). 
+        Rédige un pronostic court, percutant et professionnel (en français, maximum 3-4 phrases) pour un pari "Anytime Goalscorer". 
         Désigne clairement le joueur le plus fiable du match, sa cote estimée, et explique brièvement pourquoi c'est le meilleur choix. Utilise des balises markdown en gras (**texte**) pour les noms de joueurs et les cotes clés.
         """
         
-        # Appel au modèle Gemini Flash (rapide et efficace)
         response = ai_client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
@@ -211,7 +217,6 @@ def generate_gemini_ai_insight(home_team: str, away_team: str, home_scorers: lis
     except Exception as e:
         print(f"Erreur Gemini API: {e}")
     
-    # Fallback si l'API rencontre un souci temporaire
     return f"🎯 **Pronostic IA** : Match ouvert entre {home_team} et {away_team}. Privilégiez les attaquants de premier plan affichant la plus forte dynamique de tirs."
 
 @app.post("/predict/goalscorers")
@@ -225,7 +230,6 @@ def predict_goalscorers(req: MatchRequest):
         home_scorers = f_home.result()
         away_scorers = f_away.result()
 
-    # Appel de la vraie IA Gemini pour rédiger l'analyse du match
     ai_insight = generate_gemini_ai_insight(req.home_team, req.away_team, home_scorers, away_scorers)
 
     return {
