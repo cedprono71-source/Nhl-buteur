@@ -158,7 +158,7 @@ def predict_goalscorers(req: MatchRequest):
     
     with ThreadPoolExecutor() as executor:
         f_home = executor.submit(fetch_top_goalscorers, req.home_team)
-        f_away = executor.submit(fetch_top_goalscorers, req.home_team)
+        f_away = executor.submit(fetch_top_goalscorers, req.away_team)
         home_scorers = f_home.result()
         away_scorers = f_away.result()
 
@@ -173,4 +173,3 @@ def predict_goalscorers(req: MatchRequest):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
