@@ -6,8 +6,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+from google import genai  # SDK officiel Google GenAI
 
-app = FastAPI(title="NHL GoalScorer Analytics API", version="3.0.0")
+app = FastAPI(title="NHL GoalScorer Analytics API", version="4.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -16,6 +17,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Initialisation du client Gemini (récupère automatiquement la variable d'env GEMINI_API_KEY)
+ai_client = genai.Client()
 
 class MatchRequest(BaseModel):
     home_team: str
@@ -129,22 +133,16 @@ def fetch_top_goalscorers(team_str: str):
                     games_played = p.get('gamesPlayed', 1)
                     shots = p.get('shots', 0)
                     
-                    # Simulation de la forme récente (basée sur les stats de buts par match et tirs)
-                    # Utilise aussi les points récents si disponibles dans l'API
-                    recent_goals = p.get('last5GamesGoals', p.get('goalsLast5', goals / max(1, games_played) * 5))
-                    
                     if games_played == 0:
                         continue
                     
                     goals_per_game = goals / games_played
                     shooting_pct = (goals / shots) * 100 if shots > 0 else 10.0
                     
-                    # Formule combinée : Saison + IA Momentum (Forme récente)
-                    base_prob = 30 + (goals_per_game * 40) + (shooting_pct * 0.4) + (float(recent_goals) * 2)
+                    base_prob = 30 + (goals_per_game * 40) + (shooting_pct * 0.4)
                     prob_val = max(25, min(82, int(base_prob)))
                     odds_val = round(1.65 + ((100 - prob_val) / 20), 2)
 
-                    # IA Momentum : Analyse de la dynamique
                     if prob_val >= 68:
                         momentum = "🔥 En feu (Streak active)"
                         conf = "⭐⭐⭐⭐⭐ (Top Pick)"
@@ -188,27 +186,33 @@ def fetch_top_goalscorers(team_str: str):
         "confidence": "⭐⭐⭐ (Intéressant)"
     }]
 
-def generate_ai_prediction(home_team: str, away_team: str, home_scorers: list, away_scorers: list):
-    """IA Pronostiqueur & Momentum : Analyse globale et sélectionne le meilleur coup du match."""
-    all_players = []
-    for p in home_scorers:
-        all_players.append({**p, "team": home_team})
-    for p in away_scorers:
-        all_players.append({**p, "team": away_team})
+def generate_gemini_ai_insight(home_team: str, away_team: str, home_scorers: list, away_scorers: list):
+    """Génère une analyse experte dynamique via l'API Gemini de Google."""
+    try:
+        prompt = f"""
+        Tu es un analyste expert en paris sportifs et un spécialiste de la Ligue Nationale de Hockey (NHL).
+        Analyse le match à venir entre {home_team} (Domicile) et {away_team} (Extérieur).
         
-    if not all_players:
-        return "Pronostic IA : Match serré, prudence conseillée sur les buteurs."
-
-    all_players.sort(key=lambda x: int(x['prob'].replace('%', '')), reverse=True)
-    best_pick = all_players[0]
-
-    insight = (
-        f"🎯 **Pronostic IA & Momentum** : Le meilleur choix du match est **{best_pick['name']}** "
-        f"({best_pick['team']}) affichant une dynamique **{best_pick['momentum']}** et une probabilité de **{best_pick['prob']}** "
-        f"(Cote ~{best_pick['odds']}). Confiance : {best_pick['confidence']}. "
-        f"Analyse croisée : Son volume de tirs et sa série récente en font la cible idéale pour un pari Anytime Goalscorer."
-    )
-    return insight
+        Voici les meilleurs buteurs potentiels identifiés pour chaque équipe avec leurs statistiques et probabilités :
+        - Équipe {home_team} : {home_scorers[:3]}
+        - Équipe {away_team} : {away_scorers[:3]}
+        
+        Rédige un pronostic court, percutant et professionnel (en français, maximum 3-4 phrases) pour un pari "Anytime Goalscorer" (buteur n'importe quand). 
+        Désigne clairement le joueur le plus fiable du match, sa cote estimée, et explique brièvement pourquoi c'est le meilleur choix. Utilise des balises markdown en gras (**texte**) pour les noms de joueurs et les cotes clés.
+        """
+        
+        # Appel au modèle Gemini Flash (rapide et efficace)
+        response = ai_client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+        )
+        if response and response.text:
+            return response.text.strip()
+    except Exception as e:
+        print(f"Erreur Gemini API: {e}")
+    
+    # Fallback si l'API rencontre un souci temporaire
+    return f"🎯 **Pronostic IA** : Match ouvert entre {home_team} et {away_team}. Privilégiez les attaquants de premier plan affichant la plus forte dynamique de tirs."
 
 @app.post("/predict/goalscorers")
 def predict_goalscorers(req: MatchRequest):
@@ -221,7 +225,8 @@ def predict_goalscorers(req: MatchRequest):
         home_scorers = f_home.result()
         away_scorers = f_away.result()
 
-    ai_insight = generate_ai_prediction(req.home_team, req.away_team, home_scorers, away_scorers)
+    # Appel de la vraie IA Gemini pour rédiger l'analyse du match
+    ai_insight = generate_gemini_ai_insight(req.home_team, req.away_team, home_scorers, away_scorers)
 
     return {
         "match": f"{req.home_team} vs {req.away_team}",
