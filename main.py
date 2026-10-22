@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from google import genai  # SDK officiel Google GenAI
 
-app = FastAPI(title="NHL GoalScorer Analytics API", version="4.1.0")
+app = FastAPI(title="NHL GoalScorer Analytics API", version="4.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -18,7 +18,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialisation sécurisée du client Gemini (évite le plantage du serveur si la clé n'est pas encore lue)
+# Initialisation sécurisée du client Gemini
 try:
     ai_client = genai.Client()
 except Exception as e:
@@ -191,9 +191,9 @@ def fetch_top_goalscorers(team_str: str):
     }]
 
 def generate_gemini_ai_insight(home_team: str, away_team: str, home_scorers: list, away_scorers: list):
-    """Génère une analyse experte dynamique via l'API Gemini de Google (sécurisée)."""
+    """Génère une analyse experte dynamique via l'API Gemini avec capture d'erreur détaillée."""
     if not ai_client:
-        return f"🎯 **Pronostic IA** : Match ouvert entre {home_team} et {away_team}. Privilégiez les attaquants de premier plan."
+        return f"🎯 **Pronostic IA (Erreur)** : Client Gemini non initialisé (clé manquante ou incorrecte)."
         
     try:
         prompt = f"""
@@ -215,9 +215,11 @@ def generate_gemini_ai_insight(home_team: str, away_team: str, home_scorers: lis
         if response and response.text:
             return response.text.strip()
     except Exception as e:
-        print(f"Erreur Gemini API: {e}")
+        error_msg = str(e)
+        print(f"ERREUR API GEMINI DETAILLEE : {error_msg}")
+        return f"🎯 **Pronostic IA (Erreur API)** : {error_msg}"
     
-    return f"🎯 **Pronostic IA** : Match ouvert entre {home_team} et {away_team}. Privilégiez les attaquants de premier plan affichant la plus forte dynamique de tirs."
+    return f"🎯 **Pronostic IA** : Aucune réponse reçue du modèle."
 
 @app.post("/predict/goalscorers")
 def predict_goalscorers(req: MatchRequest):
