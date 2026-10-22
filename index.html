@@ -54,8 +54,8 @@
         .scorer-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
         .scorer-row:last-child { border-bottom: none; }
         .scorer-name { font-weight: 600; color: #fff; }
-        .scorer-sub { font-size: 0.75rem; color: var(--text-muted); }
-        .scorer-conf { font-size: 0.7rem; color: #f1c40f; margin-top: 2px; }
+        .scorer-sub { font-size: 0.72rem; color: var(--text-muted); }
+        .scorer-momentum { font-size: 0.7rem; color: #ff9f43; margin-top: 2px; font-weight: 500; }
         .scorer-badge { background: var(--accent-glow); color: var(--accent); padding: 3px 8px; border-radius: 6px; font-weight: bold; font-size: 0.8rem; border: 1px solid rgba(255, 71, 87, 0.4); }
     </style>
 </head>
@@ -63,7 +63,7 @@
 
     <header>
         <h1>🏒 NHL GoalScorer</h1>
-        <p class="subtitle">Analyse & Pronostics Buteurs</p>
+        <p class="subtitle">Analyse, Pronostics & Momentum IA</p>
     </header>
 
     <div class="date-picker-container">
@@ -79,11 +79,11 @@
     <div id="prono-modal" class="modal">
         <div class="modal-content">
             <span class="close-btn" onclick="closeModal()">&times;</span>
-            <div id="modal-title" class="modal-header">Pronostic du Match</div>
+            <div id="modal-title" class="modal-header">Pronostic & Momentum</div>
             
-            <!-- Analyse IA Pronostiqueur -->
+            <!-- Analyse IA Pronostiqueur & Momentum -->
             <div id="ai-insight-box" class="ai-insight-box">
-                Génération du pronostic IA en cours...
+                Analyse du momentum en cours...
             </div>
 
             <div class="team-tabs">
@@ -98,7 +98,7 @@
             </div>
 
             <div style="font-size: 0.78em; color: var(--text-muted); display: flex; justify-content: space-between; margin-bottom: 6px; padding: 0 4px;">
-                <span>Joueur / Confiance</span>
+                <span>Joueur / Forme Récente</span>
                 <span>Cote / Probabilité</span>
             </div>
 
@@ -160,10 +160,10 @@
             modal.style.display = 'block';
             document.getElementById('modal-title').innerText = `${home} vs ${away}`;
             
-            document.getElementById('ai-insight-box').innerText = "Analyse des cotes et calcul du pronostic en cours...";
+            document.getElementById('ai-insight-box').innerText = "Analyse croisée des dynamiques en cours...";
             document.getElementById('txt-tab-home').innerText = home;
             document.getElementById('txt-tab-away').innerText = away;
-            document.getElementById('list-home').innerHTML = '<div style="text-align:center; padding:15px; color:var(--text-muted);">Chargement des lignes...</div>';
+            document.getElementById('list-home').innerHTML = '<div style="text-align:center; padding:15px; color:var(--text-muted);">Calcul du momentum...</div>';
             document.getElementById('list-away').innerHTML = '';
 
             try {
@@ -186,7 +186,7 @@
                             <div>
                                 <div class="scorer-name">${p.name} (${p.pos})</div>
                                 <div class="scorer-sub">${p.stats}</div>
-                                <div class="scorer-conf">${p.confidence}</div>
+                                <div class="scorer-momentum">${p.momentum}</div>
                             </div>
                             <div style="text-align: right;">
                                 <span class="scorer-badge">${p.prob}</span>
@@ -203,7 +203,7 @@
                             <div>
                                 <div class="scorer-name">${p.name} (${p.pos})</div>
                                 <div class="scorer-sub">${p.stats}</div>
-                                <div class="scorer-conf">${p.confidence}</div>
+                                <div class="scorer-momentum">${p.momentum}</div>
                             </div>
                             <div style="text-align: right;">
                                 <span class="scorer-badge">${p.prob}</span>
@@ -217,7 +217,7 @@
                 document.getElementById('list-away').innerHTML = awayHtml;
 
             } catch (err) {
-                document.getElementById('ai-insight-box').innerText = "Impossible de générer le pronostic IA.";
+                document.getElementById('ai-insight-box').innerText = "Impossible de générer le momentum IA.";
                 document.getElementById('list-home').innerHTML = '<div style="color:var(--accent); text-align:center;">Erreur lors de la récupération des données.</div>';
             }
         }
