@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from google import genai  # SDK officiel Google GenAI
 
-app = FastAPI(title="NHL GoalScorer Analytics API", version="4.4.0")
+app = FastAPI(title="NHL GoalScorer Analytics API", version="4.5.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -191,21 +191,22 @@ def fetch_top_goalscorers(team_str: str):
     }]
 
 def generate_gemini_ai_insight(home_team: str, away_team: str, home_scorers: list, away_scorers: list):
-    """Génère une analyse experte dynamique avec bascule de secours en cas de saturation (503)."""
+    """Génère une analyse experte unique et dynamique pour chaque match."""
     if not ai_client:
         return f"🎯 **Pronostic IA** : Client Gemini non initialisé."
         
     try:
+        # On force l'IA à analyser précisément les données uniques des deux équipes du match
         prompt = f"""
         Tu es un analyste expert en paris sportifs et un spécialiste de la Ligue Nationale de Hockey (NHL).
-        Analyse le match à venir entre {home_team} (Domicile) et {away_team} (Extérieur).
+        Analyse de manière unique et spécifique le match du jour opposant l'équipe à domicile '{home_team}' à l'équipe visiteuse '{away_team}'.
         
-        Voici les meilleurs buteurs potentiels identifiés pour chaque équipe avec leurs statistiques et probabilités :
-        - Équipe {home_team} : {home_scorers[:3]}
-        - Équipe {away_team} : {away_scorers[:3]}
+        Voici les meilleurs buteurs et leurs statistiques actuelles pour ce match précis :
+        - Équipe Domicile ({home_team}) : {home_scorers[:3]}
+        - Équipe Extérieur ({away_team}) : {away_scorers[:3]}
         
-        Rédige un pronostic court, percutant et professionnel (en français, maximum 3-4 phrases) pour un pari "Anytime Goalscorer". 
-        Désigne clairement le joueur le plus fiable du match, sa cote estimée, et explique brièvement pourquoi c'est le meilleur choix. Utilise des balises markdown en gras (**texte**) pour les noms de joueurs et les cotes clés.
+        Rédige un pronostic court, percutant et 100% personnalisé pour ce match (maximum 3-4 phrases en français) pour un pari "Anytime Goalscorer". 
+        Cite explicitement les noms des joueurs de ce match précis, leurs probabilités, et donne ton avis d'expert. Utilise des balises markdown en gras (**texte**) pour les noms et les cotes. Ne fais pas de réponse générique.
         """
         
         response = ai_client.models.generate_content(
@@ -218,15 +219,14 @@ def generate_gemini_ai_insight(home_team: str, away_team: str, home_scorers: lis
         error_msg = str(e)
         print(f"ERREUR API GEMINI : {error_msg}")
         
-        # En cas de surcharge des serveurs Google (503), on génère un pronostic basé sur les stats
         if "503" in error_msg or "high demand" in error_msg:
             top_player = home_scorers[0]['name'] if home_scorers else "l'attaquant vedette"
             top_odds = home_scorers[0]['odds'] if home_scorers else "2.10"
-            return f"🎯 **Pronostic IA (Momentum & Stats)** : En raison d'un fort trafic sur l'IA, le modèle statistique prend le relais. Pour ce match entre **{home_team}** et **{away_team}**, **{top_player}** présente la plus forte probabilité de marquer avec une cote estimée à **{top_odds}**. Privilégiez une mise prudente sur les attaquants en tête de liste."
+            return f"🎯 **Pronostic IA (Mode Statistiques)** : Pour le choc **{home_team}** vs **{away_team}**, **{top_player}** dégage le meilleur profil statistique (cote estimée à **{top_odds}**)."
             
-        return f"🎯 **Pronostic IA (Sécurité)** : Match ouvert entre {home_team} et {away_team}. Analysez bien les dynamiques de tirs avant de placer votre pari."
+        return f"🎯 **Pronostic IA** : Analyse tactique en cours pour {home_team} face à {away_team}."
     
-    return f"🎯 **Pronostic IA** : Analyse en cours de finalisation."
+    return f"🎯 **Pronostic IA** : Analyse non disponible pour l'instant."
 
 @app.post("/predict/goalscorers")
 def predict_goalscorers(req: MatchRequest):
