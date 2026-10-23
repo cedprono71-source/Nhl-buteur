@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from typing import Optional
 from scipy.stats import poisson
 
-app = FastAPI(title="NHL GoalScorer Analytics API", version="28.00")
+app = FastAPI(title="NHL GoalScorer Analytics API", version="29.00")
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,8 +27,6 @@ class MatchRequest(BaseModel):
     home_id: Optional[str] = None
     away_id: Optional[str] = None
 
-
-# --- Dictionnaire de conversion pour les abréviations NHL ---
 TEAM_MAP_NHL = {
     "MONTREAL": "MTL", "CANADIENS": "MTL", "MTL": "MTL",
     "TORONTO": "TOR", "MAPLE LEAFS": "TOR", "TOR": "TOR",
@@ -76,8 +74,6 @@ def get_nhl_abbr(team_str: str) -> str:
         return upper_team
     return "TOR"
 
-
-# --- ROUTE PRINCIPALE ---
 @app.get("/", response_class=HTMLResponse)
 def serve_home():
     try:
@@ -86,8 +82,6 @@ def serve_home():
     except FileNotFoundError:
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
-
-# --- Moteur de calcul mathématique (Loi de Poisson) ---
 def calculate_poisson_probs(goals: int, games: int):
     if games <= 0:
         games = 1
@@ -101,20 +95,15 @@ def calculate_poisson_probs(goals: int, games: int):
     
     return prob_val, odds_val
 
-
-# --- Récupération des buteurs NHL (Basé sur Poisson) ---
 def fetch_nhl_goalscorers(team_str: str):
     abbr = get_nhl_abbr(team_str)
-    
     try:
         url = f"https://api-web.nhle.com/v1/club-stats/{abbr}/now"
         response = requests.get(url, timeout=5)
-        
         scorers = []
         if response.status_code == 200:
             data = response.json()
             skaters = data.get('skaters', [])
-            
             for p in skaters:
                 pos = p.get('positionCode', '')
                 if pos in ['L', 'R', 'C', 'F']:
@@ -148,13 +137,11 @@ def fetch_nhl_goalscorers(team_str: str):
                         "odds": f"{odds_val}",
                         "sort_val": prob_val
                     })
-            
             if scorers:
                 scorers.sort(key=lambda x: x['sort_val'], reverse=True)
                 for s in scorers:
                     del s['sort_val']
                 return scorers[:6]
-
     except Exception:
         pass
     
@@ -167,8 +154,6 @@ def fetch_nhl_goalscorers(team_str: str):
         "odds": "2.05"
     }]
 
-
-# --- Route Calendrier Matchs NHL ---
 @app.get("/api/matches/nhl")
 def get_nhl_matches(date: str):
     paris_tz = ZoneInfo("Europe/Paris")
@@ -224,13 +209,25 @@ def get_nhl_matches(date: str):
                     if away_common:
                         away_team = f"{away_team} {away_common}"
 
+                    game_state = game.get("gameState", "")
+                    home_score = home_obj.get("score", "")
+                    away_score = away_obj.get("score", "")
+
+                    # Détermination de l'affichage de l'état/score du match
+                    if game_state in ["FINAL", "OFF"]:
+                        state_display = f"Final ({home_score} - {away_score})"
+                    elif game_state in ["LIVE", "CRIT"]:
+                        state_display = f"EN DIRECT ({home_score} - {away_score})"
+                    else:
+                        state_display = dt_france.strftime("%H:%M")
+
                     formatted_matches.append({
                         "_sort_time": start_utc,
                         "home_team": home_team,
                         "away_team": away_team,
                         "home_logo": home_obj.get("logo", ""),
                         "away_logo": away_obj.get("logo", ""),
-                        "game_state": dt_france.strftime("%H:%M")
+                        "game_state": state_display
                     })
         except Exception:
             continue
@@ -239,8 +236,6 @@ def get_nhl_matches(date: str):
     final_matches = [{k: v for k, v in m.items() if k != "_sort_time"} for m in formatted_matches]
     return {"date": date, "matches": final_matches}
 
-
-# --- Route de Prédiction NHL ---
 @app.post("/predict/goalscorers")
 def predict_goalscorers(req: MatchRequest):
     home_abbr = get_nhl_abbr(req.home_team)
@@ -259,7 +254,6 @@ def predict_goalscorers(req: MatchRequest):
         "top_goalscorers_home": home_scorers,
         "top_goalscorers_away": away_scorers
     }
-
 
 if __name__ == "__main__":
     import uvicorn
