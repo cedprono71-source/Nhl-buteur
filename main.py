@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from google import genai  # SDK officiel Google GenAI
 
-app = FastAPI(title="NHL GoalScorer Analytics API", version="4.6.0")
+app = FastAPI(title="NHL GoalScorer Analytics API", version="4.7.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -18,7 +18,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialisation sécurisée du client Gemini
 try:
     ai_client = genai.Client()
 except Exception as e:
@@ -29,53 +28,61 @@ class MatchRequest(BaseModel):
     home_team: str
     away_team: str
 
-# Dictionnaire complet des abréviations NHL
+# Dictionnaire exhaustif de toutes les équipes NHL (Villes, Noms communs, Abréviations)
 TEAM_MAP = {
     "MONTREAL": "MTL", "CANADIENS": "MTL", "MTL": "MTL",
     "TORONTO": "TOR", "MAPLE LEAFS": "TOR", "TOR": "TOR",
     "BOSTON": "BOS", "BRUINS": "BOS", "BOS": "BOS",
     "NEW YORK RANGERS": "NYR", "RANGERS": "NYR", "NYR": "NYR",
-    "SAN JOSE": "SJS", "SHARKS": "SJS", "SJS": "SJS",
-    "EDMONTON": "EDM", "OILERS": "EDM", "EDM": "EDM",
-    "VANCOUVER": "VAN", "CANUCKS": "VAN", "VAN": "VAN",
-    "CALGARY": "CGY", "FLAMES": "CGY", "CGY": "CGY",
-    "WINNIPEG": "WPG", "JETS": "WPG", "WPG": "WPG",
+    "NEW YORK ISLANDERS": "NYI", "ISLANDERS": "NYI", "NYI": "NYI",
+    "NEW JERSEY": "NJD", "DEVILS": "NJD", "NJD": "NJD",
+    "BUFFALO": "BUF", "SABRES": "BUF", "BUF": "BUF",
     "OTTAWA": "OTT", "SENATORS": "OTT", "OTT": "OTT",
     "DETROIT": "DET", "RED WINGS": "DET", "DET": "DET",
-    "BUFFALO": "BUF", "SABRES": "BUF", "BUF": "BUF",
     "TAMPA BAY": "TBL", "LIGHTNING": "TBL", "TBL": "TBL",
     "FLORIDA": "FLA", "PANTHERS": "FLA", "FLA": "FLA",
     "CAROLINA": "CAR", "HURRICANES": "CAR", "CAR": "CAR",
-    "NEW JERSEY": "NJD", "DEVILS": "NJD", "NJD": "NJD",
-    "NEW YORK ISLANDERS": "NYI", "ISLANDERS": "NYI", "NYI": "NYI",
-    "PHILADELPHIA": "PHI", "FLYERS": "PHI", "PHI": "PHI",
-    "PITTSBURGH": "PIT", "PENGUINS": "PIT", "PIT": "PIT",
     "WASHINGTON": "WSH", "CAPITALS": "WSH", "WSH": "WSH",
+    "PITTSBURGH": "PIT", "PENGUINS": "PIT", "PIT": "PIT",
+    "PHILADELPHIA": "PHI", "FLYERS": "PHI", "PHI": "PHI",
     "COLUMBUS": "CBJ", "BLUE JACKETS": "CBJ", "CBJ": "CBJ",
     "CHICAGO": "CHI", "BLACKHAWKS": "CHI", "CHI": "CHI",
     "NASHVILLE": "NSH", "PREDATORS": "NSH", "NSH": "NSH",
     "ST. LOUIS": "STL", "BLUES": "STL", "STL": "STL",
     "MINNESOTA": "MIN", "WILD": "MIN", "MIN": "MIN",
+    "WINNIPEG": "WPG", "JETS": "WPG", "WPG": "WPG",
     "COLORADO": "COL", "AVALANCHE": "COL", "COL": "COL",
-    "UTAH": "UTA", "VEGAS": "VGK", "GOLDEN KNIGHTS": "VGK", "VGK": "VGK",
+    "DALLAS": "DAL", "STARS": "DAL", "DAL": "DAL",
+    "ARIZONA": "ARI", "COYOTES": "ARI", "ARI": "ARI",
+    "UTAH": "UTA", "HOCKEY CLUB": "UTA", "UTA": "UTA",
+    "EDMONTON": "EDM", "OILERS": "EDM", "EDM": "EDM",
+    "CALGARY": "CGY", "FLAMES": "CGY", "CGY": "CGY",
+    "VANCOUVER": "VAN", "CANUCKS": "VAN", "VAN": "VAN",
     "SEATTLE": "SEA", "KRAKEN": "SEA", "SEA": "SEA",
     "LOS ANGELES": "LAK", "KINGS": "LAK", "LAK": "LAK",
     "ANAHEIM": "ANA", "DUCKS": "ANA", "ANA": "ANA",
-    "DALLAS": "DAL", "STARS": "DAL", "DAL": "DAL"
+    "SAN JOSE": "SJS", "SHARKS": "SJS", "SJS": "SJS",
+    "VEGAS": "VGK", "GOLDEN KNIGHTS": "VGK", "VGK": "VGK", "KNIGHTS": "VGK"
 }
 
 def get_nhl_abbr(team_str: str) -> str:
     upper_team = team_str.upper().strip()
-    # Vérification exacte d'abord
+    
+    # 1. Vérification par correspondance exacte
     if upper_team in TEAM_MAP:
         return TEAM_MAP[upper_team]
-    # Recherche partielle ensuite
+        
+    # 2. Vérification par inclusion de mots clés
     for key, code in TEAM_MAP.items():
         if key in upper_team:
             return code
+            
+    # 3. Si c'est déjà un code à 3 lettres valide
     if len(upper_team) == 3:
         return upper_team
-    return "MTL"
+        
+    # Sécurité ultime : si vraiment introuvable, on renvoie une valeur neutre ou Toronto au lieu de bloquer sur MTL
+    return "TOR"
 
 @app.get("/", response_class=HTMLResponse)
 def serve_home():
@@ -102,13 +109,14 @@ def get_nhl_matches(date: str = None):
             home_obj = game.get("homeTeam", {})
             away_obj = game.get("awayTeam", {})
             
-            home_team = home_obj.get("placeName", {}).get("default", "Home")
-            away_team = away_obj.get("placeName", {}).get("default", "Away")
-            
+            # Récupération propre du nom complet de l'équipe
+            home_name = home_obj.get("placeName", {}).get("default", "")
             home_common = home_obj.get("commonName", {}).get("default", "")
+            home_team = f"{home_name} {home_common}".strip() or "Home"
+            
+            away_name = away_obj.get("placeName", {}).get("default", "")
             away_common = away_obj.get("commonName", {}).get("default", "")
-            if home_common: home_team = f"{home_team} {home_common}"
-            if away_common: away_team = f"{away_team} {away_common}"
+            away_team = f"{away_name} {away_common}".strip() or "Away"
 
             matches.append({
                 "league": "NHL",
@@ -196,28 +204,28 @@ def fetch_top_goalscorers(team_str: str):
     }]
 
 def generate_gemini_ai_insight(home_team: str, away_team: str, home_scorers: list, away_scorers: list):
-    """Génère une analyse experte unique et variée pour chaque match."""
+    """Génère une analyse unique et variée pour chaque match via Gemini."""
     if not ai_client:
         return f"🎯 **Pronostic IA** : Client Gemini non initialisé."
         
     try:
         prompt = f"""
         Tu es un analyste expert en paris sportifs et un spécialiste de la Ligue Nationale de Hockey (NHL).
-        Rédige une analyse complètement unique et personnalisée pour le match opposant '{home_team}' (à domicile) à '{away_team}' (à l'extérieur).
+        Rédige une analyse complètement unique, percutante et personnalisée pour le match du jour opposant '{home_team}' (à domicile) à '{away_team}' (à l'extérieur).
         
-        Voici les meilleurs buteurs et statistiques spécifiques pour ce match :
+        Voici les meilleurs buteurs et statistiques spécifiques pour ce match précis :
         - Équipe Domicile ({home_team}) : {home_scorers[:3]}
         - Équipe Extérieur ({away_team}) : {away_scorers[:3]}
         
-        Rédige un pronostic court, percutant et professionnel (maximum 3-4 phrases en français) pour un pari "Anytime Goalscorer". 
-        Cite explicitement les joueurs de ce match précis, leurs probabilités, et donne ton avis d'expert. Utilise des balises markdown en gras (**texte**) pour les noms et les cotes. Ne fais jamais de réponse passe-partout.
+        Rédige un pronostic court (maximum 3-4 phrases en français) pour un pari "Anytime Goalscorer". 
+        Cite explicitement les joueurs de ce match, leurs probabilités, et donne ton avis d'expert. Utilise des balises markdown en gras (**texte**) pour les noms et les cotes. Ne fais jamais de réponse passe-partout.
         """
         
         response = ai_client.models.generate_content(
             model='gemini-3.8-flash',
             contents=prompt,
             config={
-                'temperature': 1.1,  # Force l'IA à varier ses tournures de phrases à chaque match
+                'temperature': 1.1,
             }
         )
         if response and response.text:
