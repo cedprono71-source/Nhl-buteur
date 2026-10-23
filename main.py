@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from google import genai  # SDK officiel Google GenAI
 
-app = FastAPI(title="NHL GoalScorer Analytics API", version="4.7.0")
+app = FastAPI(title="NHL GoalScorer Analytics API", version="4.8.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,7 +28,6 @@ class MatchRequest(BaseModel):
     home_team: str
     away_team: str
 
-# Dictionnaire exhaustif de toutes les équipes NHL (Villes, Noms communs, Abréviations)
 TEAM_MAP = {
     "MONTREAL": "MTL", "CANADIENS": "MTL", "MTL": "MTL",
     "TORONTO": "TOR", "MAPLE LEAFS": "TOR", "TOR": "TOR",
@@ -67,21 +66,13 @@ TEAM_MAP = {
 
 def get_nhl_abbr(team_str: str) -> str:
     upper_team = team_str.upper().strip()
-    
-    # 1. Vérification par correspondance exacte
     if upper_team in TEAM_MAP:
         return TEAM_MAP[upper_team]
-        
-    # 2. Vérification par inclusion de mots clés
     for key, code in TEAM_MAP.items():
         if key in upper_team:
             return code
-            
-    # 3. Si c'est déjà un code à 3 lettres valide
     if len(upper_team) == 3:
         return upper_team
-        
-    # Sécurité ultime : si vraiment introuvable, on renvoie une valeur neutre ou Toronto au lieu de bloquer sur MTL
     return "TOR"
 
 @app.get("/", response_class=HTMLResponse)
@@ -109,7 +100,6 @@ def get_nhl_matches(date: str = None):
             home_obj = game.get("homeTeam", {})
             away_obj = game.get("awayTeam", {})
             
-            # Récupération propre du nom complet de l'équipe
             home_name = home_obj.get("placeName", {}).get("default", "")
             home_common = home_obj.get("commonName", {}).get("default", "")
             home_team = f"{home_name} {home_common}".strip() or "Home"
@@ -204,7 +194,7 @@ def fetch_top_goalscorers(team_str: str):
     }]
 
 def generate_gemini_ai_insight(home_team: str, away_team: str, home_scorers: list, away_scorers: list):
-    """Génère une analyse unique et variée pour chaque match via Gemini."""
+    """Génère une analyse unique incluant une balise de traçabilité des équipes."""
     if not ai_client:
         return f"🎯 **Pronostic IA** : Client Gemini non initialisé."
         
@@ -218,7 +208,7 @@ def generate_gemini_ai_insight(home_team: str, away_team: str, home_scorers: lis
         - Équipe Extérieur ({away_team}) : {away_scorers[:3]}
         
         Rédige un pronostic court (maximum 3-4 phrases en français) pour un pari "Anytime Goalscorer". 
-        Cite explicitement les joueurs de ce match, leurs probabilités, et donne ton avis d'expert. Utilise des balises markdown en gras (**texte**) pour les noms et les cotes. Ne fais jamais de réponse passe-partout.
+        Cite explicitement les joueurs de ce match, leurs probabilités, et donne ton avis d'expert. Utilise des balises markdown en gras (**texte**) pour les noms et les cotes.
         """
         
         response = ai_client.models.generate_content(
@@ -229,17 +219,13 @@ def generate_gemini_ai_insight(home_team: str, away_team: str, home_scorers: lis
             }
         )
         if response and response.text:
-            return response.text.strip()
+            # On ajoute un préfixe de traçabilité technique pour voir clairement les équipes traitées
+            trace_header = f"🔍 [API OK] Match analysé : **{home_team}** vs **{away_team}** (Abbr Domicile: {get_nhl_abbr(home_team)})<br><br>"
+            return trace_header + response.text.strip()
     except Exception as e:
         error_msg = str(e)
         print(f"ERREUR API GEMINI : {error_msg}")
-        
-        if "503" in error_msg or "high demand" in error_msg:
-            top_player = home_scorers[0]['name'] if home_scorers else "l'attaquant clé"
-            top_odds = home_scorers[0]['odds'] if home_scorers else "2.10"
-            return f"🎯 **Pronostic IA (Mode Statistiques)** : Pour l'affiche **{home_team}** vs **{away_team}**, **{top_player}** présente la meilleure valeur statistique avec une cote de **{top_odds}**."
-            
-        return f"🎯 **Pronostic IA** : Analyse tactique en cours pour la rencontre {home_team} contre {away_team}."
+        return f"🎯 **Erreur IA** : {error_msg}"
     
     return f"🎯 **Pronostic IA** : Analyse non disponible."
 
