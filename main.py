@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from typing import Optional
 from scipy.stats import poisson
 
-app = FastAPI(title="NHL GoalScorer Analytics API", version="29.00")
+app = FastAPI(title="NHL GoalScorer Analytics API", version="30.00")
 
 app.add_middleware(
     CORSMiddleware,
@@ -82,13 +82,18 @@ def serve_home():
     except FileNotFoundError:
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
-def calculate_poisson_probs(goals: int, games: int):
+def calculate_poisson_probs(goals: int, games: int, position: str):
     if games <= 0:
         games = 1
     lambda_val = goals / games
+    
+    # Ajustement selon le profil/position (bonus offensif pour les attaquants)
+    if position in ['C', 'L', 'R']:
+        lambda_val *= 1.10
+        
     prob_zero = poisson.pmf(0, lambda_val)
     prob_anytime = (1 - prob_zero) * 100
-    prob_val = max(18, min(85, int(prob_anytime)))
+    prob_val = max(20, min(85, int(prob_anytime)))
     
     true_prob = prob_val / 100.0
     odds_val = round(1.0 / true_prob * 1.08, 2)
@@ -117,7 +122,8 @@ def fetch_nhl_goalscorers(team_str: str):
                     if games_played == 0:
                         continue
                     
-                    prob_val, odds_val = calculate_poisson_probs(goals, games_played)
+                    # Intégration de la position dans le calcul de Poisson
+                    prob_val, odds_val = calculate_poisson_probs(goals, games_played, pos)
 
                     if prob_val >= 65:
                         momentum = "🔥 En feu (Streak active)"
@@ -213,7 +219,6 @@ def get_nhl_matches(date: str):
                     home_score = home_obj.get("score", "")
                     away_score = away_obj.get("score", "")
 
-                    # Détermination de l'affichage de l'état/score du match
                     if game_state in ["FINAL", "OFF"]:
                         state_display = f"Final ({home_score} - {away_score})"
                     elif game_state in ["LIVE", "CRIT"]:
