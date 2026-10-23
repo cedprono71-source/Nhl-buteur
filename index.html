@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multi-Sports GoalScorer Analytics</title>
+    <title>NHL GoalScorer Analytics</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
@@ -13,25 +13,22 @@
     <header class="bg-white border-b border-slate-200 py-4 px-6 sticky top-0 z-50 shadow-sm">
         <div class="max-w-4xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
             <h1 class="text-xl font-extrabold tracking-wider text-red-600 flex items-center gap-2">
-                ⚽🏒 <span class="text-slate-900">GoalScorer Analytics</span>
+                🏒 <span class="text-slate-900">NHL GoalScorer Analytics</span>
             </h1>
             
-            <!-- Sélecteur de Sport / Ligue -->
-            <div class="flex bg-slate-200 p-1 rounded-xl border border-slate-300">
-                <button id="tab-nhl" onclick="switchLeague('NHL')" class="px-4 py-1.5 text-xs font-bold rounded-lg bg-red-600 text-white shadow-sm transition">NHL (Hockey)</button>
-                <button id="tab-foot" onclick="switchLeague('FOOT')" class="px-4 py-1.5 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900 transition">Football</button>
-            </div>
-
             <!-- Sélecteur de date -->
-            <input type="date" id="date-picker" class="bg-slate-50 text-slate-800 font-semibold px-3 py-1.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:border-red-500 shadow-inner">
+            <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-slate-500 uppercase">Date :</span>
+                <input type="date" id="date-picker" class="bg-slate-50 text-slate-800 font-semibold px-3 py-1.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:border-red-500 shadow-inner">
+            </div>
         </div>
     </header>
 
     <!-- Contenu Principal -->
     <main class="max-w-4xl mx-auto p-4 sm:p-6">
-        <div id="loading" class="text-center py-12 text-slate-500 font-medium">Chargement des matchs...</div>
+        <div id="loading" class="text-center py-12 text-slate-500 font-medium">Chargement des matchs de la LNH...</div>
         <div id="matches-container" class="space-y-4"></div>
-        <div id="no-matches" class="hidden text-center py-12 text-slate-500 font-medium">Aucun match trouvé pour cette sélection.</div>
+        <div id="no-matches" class="hidden text-center py-12 text-slate-500 font-medium">Aucun match NHL trouvé pour cette date.</div>
     </main>
 
     <!-- Modale de Prédiction (Buteurs) -->
@@ -61,7 +58,6 @@
 
     <!-- Script JavaScript Front-End -->
     <script>
-        let currentLeague = 'NHL';
         let currentMatchData = null;
         let activeModalTab = 'home';
 
@@ -70,36 +66,10 @@
         datePicker.value = todayStr;
 
         datePicker.addEventListener('change', (e) => {
-            if (currentLeague === 'NHL') loadNhlMatches(e.target.value);
+            loadNhlMatches(e.target.value);
         });
 
-        const sampleFootMatches = [
-            { home_team: "Real Madrid", away_team: "FC Barcelone", game_state: "21:00" },
-            { home_team: "Manchester City", away_team: "Arsenal", game_state: "18:30" },
-            { home_team: "Paris SG", away_team: "Marseille", game_state: "20:45" },
-            { home_team: "Bayern Munich", away_team: "Borussia Dortmund", game_state: "17:30" }
-        ];
-
         loadNhlMatches(todayStr);
-
-        function switchLeague(league) {
-            currentLeague = league;
-            const tabNhl = document.getElementById('tab-nhl');
-            const tabFoot = document.getElementById('tab-foot');
-            const dateInput = document.getElementById('date-picker');
-
-            if (league === 'NHL') {
-                tabNhl.className = "px-4 py-1.5 text-xs font-bold rounded-lg bg-red-600 text-white shadow-sm transition";
-                tabFoot.className = "px-4 py-1.5 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900 transition";
-                dateInput.style.display = "block";
-                loadNhlMatches(datePicker.value);
-            } else {
-                tabFoot.className = "px-4 py-1.5 text-xs font-bold rounded-lg bg-red-600 text-white shadow-sm transition";
-                tabNhl.className = "px-4 py-1.5 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900 transition";
-                dateInput.style.display = "none";
-                loadFootMatches();
-            }
-        }
 
         async function loadNhlMatches(date) {
             const container = document.getElementById('matches-container');
@@ -121,7 +91,7 @@
                 }
 
                 data.matches.forEach(match => {
-                    renderMatchCard(container, match.home_team, match.away_team, match.home_logo, match.away_logo, match.game_state, 'NHL');
+                    renderMatchCard(container, match.home_team, match.away_team, match.home_logo, match.away_logo, match.game_state);
                 });
             } catch (err) {
                 loading.classList.add('hidden');
@@ -129,59 +99,44 @@
             }
         }
 
-        function loadFootMatches() {
-            const container = document.getElementById('matches-container');
-            const loading = document.getElementById('loading');
-            const noMatches = document.getElementById('no-matches');
-
-            loading.classList.add('hidden');
-            container.innerHTML = '';
-            noMatches.classList.add('hidden');
-
-            sampleFootMatches.forEach(match => {
-                renderMatchCard(container, match.home_team, match.away_team, '', '', match.game_state, 'FOOT');
-            });
-        }
-
-        function renderMatchCard(container, home, away, homeLogo, awayLogo, state, league) {
+        function renderMatchCard(container, home, away, homeLogo, awayLogo, state) {
             const card = document.createElement('div');
-            // Cartes en fond blanc, ombragées, plus grandes et aérées
             card.className = "bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 flex items-center justify-between shadow-sm hover:shadow-md hover:border-slate-300 transition cursor-pointer";
-            card.onclick = () => fetchPrediction(league, home, away);
+            card.onclick = () => fetchPrediction(home, away);
 
-            const hLogo = homeLogo || "https://media.api-sports.io/football/teams/default.png";
-            const aLogo = awayLogo || "https://media.api-sports.io/football/teams/default.png";
+            const hLogo = homeLogo || "https://assets.nhle.com/logos/nhl/svg/TOR_light.svg";
+            const aLogo = awayLogo || "https://assets.nhle.com/logos/nhl/svg/TOR_light.svg";
 
             card.innerHTML = `
                 <div class="flex items-center gap-4 flex-1 justify-end">
                     <span class="font-bold text-slate-800 text-right text-sm sm:text-base">${home}</span>
-                    <img src="${hLogo}" alt="" class="w-10 h-10 sm:w-12 sm:h-12 object-contain drop-shadow">
+                    <img src="${hLogo}" alt="" class="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow">
                 </div>
                 <div class="px-4 text-center">
                     <span class="text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full font-mono font-semibold border border-slate-200">${state}</span>
                 </div>
                 <div class="flex items-center gap-4 flex-1 justify-start">
-                    <img src="${aLogo}" alt="" class="w-10 h-10 sm:w-12 sm:h-12 object-contain drop-shadow">
+                    <img src="${aLogo}" alt="" class="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow">
                     <span class="font-bold text-slate-800 text-left text-sm sm:text-base">${away}</span>
                 </div>
             `;
             container.appendChild(card);
         }
 
-        async function fetchPrediction(league, homeTeam, awayTeam) {
+        async function fetchPrediction(homeTeam, awayTeam) {
             const modal = document.getElementById('modal');
             document.getElementById('modal-teams').innerText = `${homeTeam} vs ${awayTeam}`;
             modal.classList.remove('hidden');
             modal.classList.add('flex');
 
             const playersContainer = document.getElementById('players-container');
-            playersContainer.innerHTML = '<div class="text-center py-8 text-slate-500 font-medium">Calcul des probabilités buteurs...</div>';
+            playersContainer.innerHTML = '<div class="text-center py-8 text-slate-500 font-medium">Calcul des probabilités buteurs (Poisson)...</div>';
 
             try {
                 const response = await fetch('/predict/goalscorers', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ league: league, home_team: homeTeam, away_team: awayTeam })
+                    body: JSON.stringify({ league: "NHL", home_team: homeTeam, away_team: awayTeam })
                 });
                 
                 currentMatchData = await response.json();
@@ -200,7 +155,7 @@
                 btnHome.className = "flex-1 py-2 text-sm font-bold rounded-lg bg-red-600 text-white shadow-sm transition";
                 btnAway.className = "flex-1 py-2 text-sm font-bold rounded-lg text-slate-600 hover:text-slate-900 transition";
             } else {
-                btnAway.className = "flex-1 py-2 text-sm font-bold rounded-lg bg-red-600 text-white transition";
+                btnAway.className = "flex-1 py-2 text-sm font-bold rounded-lg bg-red-600 text-white shadow-sm transition";
                 btnHome.className = "flex-1 py-2 text-sm font-bold rounded-lg text-slate-600 hover:text-slate-900 transition";
             }
             renderPlayers();
