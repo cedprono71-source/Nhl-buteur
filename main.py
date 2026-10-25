@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from typing import Optional
 from scipy.stats import poisson
 
-app = FastAPI(title="NHL GoalScorer Analytics API", version="30.00")
+app = FastAPI(title="NHL GoalScorer Analytics API", version="32.00")
 
 app.add_middleware(
     CORSMiddleware,
@@ -82,18 +82,21 @@ def serve_home():
     except FileNotFoundError:
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
-def calculate_poisson_probs(goals: int, games: int, position: str):
+def calculate_poisson_probs(stat_count: int, games: int, position: str):
     if games <= 0:
         games = 1
-    lambda_val = goals / games
     
-    # Ajustement selon le profil/position (bonus offensif pour les attaquants)
-    if position in ['C', 'L', 'R']:
+    lambda_val = stat_count / games
+    
+    if position in ['C', 'L', 'R', 'D']:
         lambda_val *= 1.10
+        
+    if (stat_count / games) > 0.4:
+        lambda_val *= 1.20
         
     prob_zero = poisson.pmf(0, lambda_val)
     prob_anytime = (1 - prob_zero) * 100
-    prob_val = max(20, min(85, int(prob_anytime)))
+    prob_val = max(20, min(88, int(prob_anytime)))
     
     true_prob = prob_val / 100.0
     odds_val = round(1.0 / true_prob * 1.08, 2)
@@ -122,7 +125,6 @@ def fetch_nhl_goalscorers(team_str: str):
                     if games_played == 0:
                         continue
                     
-                    # Intégration de la position dans le calcul de Poisson
                     prob_val, odds_val = calculate_poisson_probs(goals, games_played, pos)
 
                     if prob_val >= 65:
@@ -158,6 +160,65 @@ def fetch_nhl_goalscorers(team_str: str):
         "momentum": "📊 Forme stable",
         "prob": "48%", 
         "odds": "2.05"
+    }]
+
+def fetch_nhl_playmakers(team_str: str):
+    abbr = get_nhl_abbr(team_str)
+    try:
+        url = f"https://api-web.nhle.com/v1/club-stats/{abbr}/now"
+        response = requests.get(url, timeout=5)
+        playmakers = []
+        if response.status_code == 200:
+            data = response.json()
+            skaters = data.get('skaters', [])
+            for p in skaters:
+                pos = p.get('positionCode', '')
+                if pos in ['L', 'R', 'C', 'F', 'D']:
+                    first_dict = p.get('firstName', {})
+                    last_dict = p.get('lastName', {})
+                    first = first_dict.get('default', '') if isinstance(first_dict, dict) else str(first_dict)
+                    last = last_dict.get('default', '') if isinstance(last_dict, dict) else str(last_dict)
+                    
+                    assists = p.get('assists', 0)
+                    games_played = p.get('gamesPlayed', 1)
+                    if games_played == 0:
+                        continue
+                    
+                    prob_val, odds_val = calculate_poisson_probs(assists, games_played, pos)
+
+                    if prob_val >= 65:
+                        momentum = "🔥 Grande distribution"
+                    elif prob_val >= 52:
+                        momentum = "⚡ Très actif à la passe"
+                    elif prob_val >= 40:
+                        momentum = "📊 Vision de jeu stable"
+                    else:
+                        momentum = "❄️ Discret"
+
+                    playmakers.append({
+                        "name": f"{first} {last}".strip(),
+                        "pos": pos,
+                        "stats": f"{assists} passes ({games_played} m)",
+                        "momentum": momentum,
+                        "prob": f"{prob_val}%",
+                        "odds": f"{odds_val}",
+                        "sort_val": prob_val
+                    })
+            if playmakers:
+                playmakers.sort(key=lambda x: x['sort_val'], reverse=True)
+                for s in playmakers:
+                    del s['sort_val']
+                return playmakers[:6]
+    except Exception:
+        pass
+    
+    return [{
+        "name": f"Passeur Clé ({team_str})", 
+        "pos": "F", 
+        "stats": "Stats en cours", 
+        "momentum": "📊 Vision stable",
+        "prob": "50%", 
+        "odds": "2.00"
     }]
 
 @app.get("/api/matches/nhl")
@@ -248,6 +309,8 @@ def predict_goalscorers(req: MatchRequest):
     
     home_scorers = fetch_nhl_goalscorers(req.home_team)
     away_scorers = fetch_nhl_goalscorers(req.away_team)
+    home_playmakers = fetch_nhl_playmakers(req.home_team)
+    away_playmakers = fetch_nhl_playmakers(req.away_team)
     
     home_logo = f"https://assets.nhle.com/logos/nhl/svg/{home_abbr}_light.svg"
     away_logo = f"https://assets.nhle.com/logos/nhl/svg/{away_abbr}_light.svg"
@@ -257,7 +320,9 @@ def predict_goalscorers(req: MatchRequest):
         "home_logo": home_logo,
         "away_logo": away_logo,
         "top_goalscorers_home": home_scorers,
-        "top_goalscorers_away": away_scorers
+        "top_goalscorers_away": away_scorers,
+        "top_playmakers_home": home_playmakers,
+        "top_playmakers_away": away_playmakers
     }
 
 if __name__ == "__main__":
