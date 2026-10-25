@@ -27,6 +27,7 @@
         <div id="no-matches" class="hidden text-center py-12 text-slate-500 font-medium">Aucun match NHL trouvé pour cette date.</div>
     </main>
 
+    <!-- Modale de Prédiction -->
     <div id="modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden items-center justify-center p-4 z-50">
         <div class="bg-white border border-slate-200 w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
             
@@ -36,11 +37,19 @@
             </div>
 
             <div class="p-4 flex-1 overflow-y-auto space-y-4">
+                <!-- Onglets Type de Stat (Buteurs vs Passeurs) -->
+                <div class="flex bg-slate-200 p-1 rounded-xl">
+                    <button id="tab-type-goals" onclick="switchStatType('goals')" class="flex-1 py-1.5 text-xs font-bold rounded-lg bg-white text-slate-900 shadow-sm transition">🎯 Buteurs</button>
+                    <button id="tab-type-assists" onclick="switchStatType('assists')" class="flex-1 py-1.5 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900 transition">🤝 Passeurs</button>
+                </div>
+
+                <!-- Boutons Domicile / Extérieur -->
                 <div class="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
                     <button id="btn-home" onclick="switchModalTab('home')" class="flex-1 py-2 text-sm font-bold rounded-lg bg-red-600 text-white shadow-sm transition">Domicile</button>
                     <button id="btn-away" onclick="switchModalTab('away')" class="flex-1 py-2 text-sm font-bold rounded-lg text-slate-600 hover:text-slate-900 transition">Extérieur</button>
                 </div>
 
+                <!-- Conteneur des joueurs -->
                 <div id="players-container" class="space-y-3"></div>
             </div>
 
@@ -50,6 +59,7 @@
     <script>
         let currentMatchData = null;
         let activeModalTab = 'home';
+        let activeStatType = 'goals'; // 'goals' ou 'assists'
 
         const todayStr = new Date().toISOString().split('T')[0];
         const datePicker = document.getElementById('date-picker');
@@ -120,7 +130,7 @@
             modal.classList.add('flex');
 
             const playersContainer = document.getElementById('players-container');
-            playersContainer.innerHTML = '<div class="text-center py-8 text-slate-500 font-medium">Calcul des probabilités buteurs (Poisson)...</div>';
+            playersContainer.innerHTML = '<div class="text-center py-8 text-slate-500 font-medium">Calcul des probabilités (Poisson)...</div>';
 
             try {
                 const response = await fetch('/predict/goalscorers', {
@@ -134,6 +144,21 @@
             } catch (err) {
                 playersContainer.innerHTML = '<div class="text-center py-8 text-red-500 font-medium">Erreur lors de la récupération des données.</div>';
             }
+        }
+
+        function switchStatType(type) {
+            activeStatType = type;
+            const tabGoals = document.getElementById('tab-type-goals');
+            const tabAssists = document.getElementById('tab-type-assists');
+
+            if (type === 'goals') {
+                tabGoals.className = "flex-1 py-1.5 text-xs font-bold rounded-lg bg-white text-slate-900 shadow-sm transition";
+                tabAssists.className = "flex-1 py-1.5 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900 transition";
+            } else {
+                tabAssists.className = "flex-1 py-1.5 text-xs font-bold rounded-lg bg-white text-slate-900 shadow-sm transition";
+                tabGoals.className = "flex-1 py-1.5 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900 transition";
+            }
+            renderPlayers();
         }
 
         function switchModalTab(tab) {
@@ -156,7 +181,12 @@
             const container = document.getElementById('players-container');
             container.innerHTML = '';
 
-            const players = activeModalTab === 'home' ? currentMatchData.top_goalscorers_home : currentMatchData.top_goalscorers_away;
+            let players = [];
+            if (activeStatType === 'goals') {
+                players = activeModalTab === 'home' ? currentMatchData.top_goalscorers_home : currentMatchData.top_goalscorers_away;
+            } else {
+                players = activeModalTab === 'home' ? currentMatchData.top_playmakers_home : currentMatchData.top_playmakers_away;
+            }
 
             players.forEach(p => {
                 const item = document.createElement('div');
