@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from typing import Optional
 from scipy.stats import poisson
 
-app = FastAPI(title="NHL GoalScorer Analytics API", version="32.00")
+app = FastAPI(title="NHL GoalScorer Analytics API", version="33.00")
 
 app.add_middleware(
     CORSMiddleware,
@@ -85,12 +85,9 @@ def serve_home():
 def calculate_poisson_probs(stat_count: int, games: int, position: str):
     if games <= 0:
         games = 1
-    
     lambda_val = stat_count / games
-    
     if position in ['C', 'L', 'R', 'D']:
         lambda_val *= 1.10
-        
     if (stat_count / games) > 0.4:
         lambda_val *= 1.20
         
@@ -100,8 +97,28 @@ def calculate_poisson_probs(stat_count: int, games: int, position: str):
     
     true_prob = prob_val / 100.0
     odds_val = round(1.0 / true_prob * 1.08, 2)
-    
     return prob_val, odds_val
+
+def fetch_team_stats_summary(team_str: str):
+    abbr = get_nhl_abbr(team_str)
+    total_goals = 0
+    total_games = 1
+    try:
+        url = f"https://api-web.nhle.com/v1/club-stats/{abbr}/now"
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            skaters = data.get('skaters', [])
+            for p in skaters:
+                total_goals += p.get('goals', 0)
+                gp = p.get('gamesPlayed', 0)
+                if gp > total_games:
+                    total_games = gp
+            team_avg_goals = max(2.2, round((total_goals / max(1, total_games)) * 1.15, 2))
+            return team_avg_goals
+    except Exception:
+        pass
+    return 3.1
 
 def fetch_nhl_goalscorers(team_str: str):
     abbr = get_nhl_abbr(team_str)
@@ -312,6 +329,15 @@ def predict_goalscorers(req: MatchRequest):
     home_playmakers = fetch_nhl_playmakers(req.home_team)
     away_playmakers = fetch_nhl_playmakers(req.away_team)
     
+    home_xg = fetch_team_stats_summary(req.home_team)
+    away_xg = fetch_team_stats_summary(req.away_team)
+    
+    home_win_prob = round(poisson.pmf(1, home_xg) * 45 + 32, 1)
+    away_win_prob = round(poisson.pmf(1, away_xg) * 45 + 28, 1)
+    draw_prob = max(10.0, round(100.0 - (home_win_prob + away_win_prob), 1))
+    
+    over_5_5_prob = round(min(85.0, max(30.0, (home_xg + away_xg) * 16.5)), 1)
+
     home_logo = f"https://assets.nhle.com/logos/nhl/svg/{home_abbr}_light.svg"
     away_logo = f"https://assets.nhle.com/logos/nhl/svg/{away_abbr}_light.svg"
 
@@ -319,6 +345,14 @@ def predict_goalscorers(req: MatchRequest):
         "match": f"{req.home_team} vs {req.away_team}",
         "home_logo": home_logo,
         "away_logo": away_logo,
+        "match_prediction": {
+            "home_win_pct": f"{home_win_prob}%",
+            "draw_or_ot_pct": f"{draw_prob}%",
+            "away_win_pct": f"{away_win_prob}%",
+            "expected_goals_home": home_xg,
+            "expected_goals_away": away_xg,
+            "over_5_5_goals_prob": f"{over_5_5_prob}%"
+        },
         "top_goalscorers_home": home_scorers,
         "top_goalscorers_away": away_scorers,
         "top_playmakers_home": home_playmakers,
