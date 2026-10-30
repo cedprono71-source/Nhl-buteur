@@ -37,6 +37,30 @@
             </div>
 
             <div class="p-4 flex-1 overflow-y-auto space-y-4">
+                
+                <!-- NOUVEAU BLOC : Pronostics Match & xG -->
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2.5 shadow-xs">
+                    <div class="text-xs font-bold text-slate-500 uppercase tracking-wider">Pronostics & Buts Attendus (xG)</div>
+                    <div class="grid grid-cols-3 gap-2 text-center">
+                        <div class="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs">
+                            <div class="text-[10px] text-slate-400 uppercase font-semibold">Victoire Dom</div>
+                            <div id="pred-home-win" class="text-sm font-extrabold text-slate-800">-</div>
+                        </div>
+                        <div class="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs">
+                            <div class="text-[10px] text-slate-400 uppercase font-semibold">Nul / OT</div>
+                            <div id="pred-draw" class="text-sm font-extrabold text-slate-800">-</div>
+                        </div>
+                        <div class="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs">
+                            <div class="text-[10px] text-slate-400 uppercase font-semibold">Victoire Ext</div>
+                            <div id="pred-away-win" class="text-sm font-extrabold text-slate-800">-</div>
+                        </div>
+                    </div>
+                    <div class="flex justify-between items-center text-xs px-1 pt-1 font-medium text-slate-600">
+                        <div>Buts attendus (xG) : <span id="pred-xg" class="font-bold text-slate-900">-</span></div>
+                        <div>Over 5.5 buts : <span id="pred-over55" class="font-bold text-red-600">-</span></div>
+                    </div>
+                </div>
+
                 <!-- Onglets Type de Stat (Buteurs vs Passeurs) -->
                 <div class="flex bg-slate-200 p-1 rounded-xl">
                     <button id="tab-type-goals" onclick="switchStatType('goals')" class="flex-1 py-1.5 text-xs font-bold rounded-lg bg-white text-slate-900 shadow-sm transition">🎯 Buteurs</button>
@@ -95,6 +119,8 @@
                 });
             } catch (err) {
                 loading.classList.add('hidden');
+                noMatches.classList.add('hidden');
+                noMatches.textContent = "Erreur de chargement des matchs.";
                 noMatches.classList.remove('hidden');
             }
         }
@@ -113,7 +139,7 @@
                     <img src="${hLogo}" alt="" class="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow">
                 </div>
                 <div class="px-4 text-center">
-                    <span class="text-xs bg-slate-100 text-slate-700 px-3 py-1.5 rounded-full font-mono font-bold border border-slate-200 shadow-xs whitespace-nowrap">${state}</span>
+                    <span class="text-xs bg-slate-100 text-slate-700 px-3 py-1.5 rounded-full font-mono font-bold border border-slate-200 shadow-2xs whitespace-nowrap">${state}</span>
                 </div>
                 <div class="flex items-center gap-4 flex-1 justify-start">
                     <img src="${aLogo}" alt="" class="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow">
@@ -129,6 +155,13 @@
             modal.classList.remove('hidden');
             modal.classList.add('flex');
 
+            // Reset des champs de pronostic en attendant
+            document.getElementById('pred-home-win').innerText = "...";
+            document.getElementById('pred-draw').innerText = "...";
+            document.getElementById('pred-away-win').innerText = "...";
+            document.getElementById('pred-xg').innerText = "...";
+            document.getElementById('pred-over55').innerText = "...";
+
             const playersContainer = document.getElementById('players-container');
             playersContainer.innerHTML = '<div class="text-center py-8 text-slate-500 font-medium">Calcul des probabilités (Poisson)...</div>';
 
@@ -140,6 +173,17 @@
                 });
                 
                 currentMatchData = await response.json();
+                
+                // Remplissage des pronostics globaux du match
+                if (currentMatchData.match_prediction) {
+                    const p = currentMatchData.match_prediction;
+                    document.getElementById('pred-home-win').innerText = p.home_win_pct;
+                    document.getElementById('pred-draw').innerText = p.draw_or_ot_pct;
+                    document.getElementById('pred-away-win').innerText = p.away_win_pct;
+                    document.getElementById('pred-xg').innerText = `${p.expected_goals_home} - ${p.expected_goals_away}`;
+                    document.getElementById('pred-over55').innerText = p.over_5_5_goals_prob;
+                }
+
                 renderPlayers();
             } catch (err) {
                 playersContainer.innerHTML = '<div class="text-center py-8 text-red-500 font-medium">Erreur lors de la récupération des données.</div>';
@@ -190,7 +234,7 @@
 
             players.forEach(p => {
                 const item = document.createElement('div');
-                item.className = "bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex items-center justify-between shadow-xs";
+                item.className = "bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex items-center justify-between shadow-2xs";
                 item.innerHTML = `
                     <div>
                         <div class="font-bold text-sm text-slate-900 flex items-center gap-2">
