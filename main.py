@@ -221,7 +221,7 @@ def fetch_nhl_goalscorers(team_str: str, team_win_prob: float = 0.5):
                         "momentum": momentum,
                         "prob": f"{prob_val}%",
                         "odds": f"{odds_val}",
-                        "sort_val": prob_val  # Tri basé sur le % le plus élevé en tête
+                        "sort_val": prob_val
                     })
             if scorers:
                 scorers.sort(key=lambda x: x['sort_val'], reverse=True)
