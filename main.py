@@ -14,7 +14,7 @@ from scipy.stats import poisson
 from contextlib import asynccontextmanager
 import asyncio
 
-# Tâche autonome en arrière-plan pour que l'appli tourne seule
+# Tâche autonome en arrière-plan pour que l'appli tourne 24/7
 async def background_nhl_sync():
     while True:
         try:
@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
     yield
     task.cancel()
 
-app = FastAPI(title="NHL GoalScorer Analytics API", version="35.00", lifespan=lifespan)
+app = FastAPI(title="NHL GoalScorer Analytics API", version="36.00", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -101,7 +101,7 @@ def serve_home():
     except FileNotFoundError:
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
-# Initialisation des IA (K-Means pour les profils & XGBoost pour la prédiction)
+# Initialisation des modèles d'IA (K-Means & XGBoost)
 kmeans_model = KMeans(n_clusters=3, random_state=42, n_init=10)
 dummy_player_features = np.array([
     [0.6, 0.2, 0.8], [0.1, 0.5, 0.3], [0.4, 0.4, 0.6],
@@ -117,6 +117,7 @@ X_ml_train = np.array([
 y_ml_train = np.array([1, 0, 1, 1, 0, 1])
 xgb_model.fit(X_ml_train, y_ml_train)
 
+# Calcul spécifique pour les buteurs
 def calculate_cluster_xgboost_probs(
     goals: int, 
     assists: int, 
@@ -145,6 +146,41 @@ def calculate_cluster_xgboost_probs(
     poisson_prob = (1 - poisson.pmf(0, lambda_val))
     
     final_score = (ai_prob * 0.6) + (poisson_prob * 0.4)
+    prob_val = max(18, min(89, int(final_score * 100)))
+    
+    true_prob = prob_val / 100.0
+    odds_val = round(1.0 / true_prob * 1.08, 2)
+    
+    return prob_val, odds_val
+
+# Calcul 100% dissocié et dédié pour les passeurs
+def calculate_playmaker_probs(
+    assists: int, 
+    games: int, 
+    pp_points: int, 
+    opp_def_rating: float = 1.0, 
+    team_win_prob: float = 0.5
+):
+    if games <= 0:
+        games = 1
+        
+    base_assist_rate = assists / games
+    pp_ratio = pp_points / max(1, assists)
+    
+    player_vector = np.array([[base_assist_rate, pp_ratio, games / 82.0]])
+    cluster_id = int(kmeans_model.predict(player_vector)[0])
+    
+    prediction_vector = np.array([[cluster_id, base_assist_rate, opp_def_rating, team_win_prob]])
+    
+    try:
+        ai_prob = float(xgb_model.predict_proba(prediction_vector)[0][1])
+    except Exception:
+        ai_prob = base_assist_rate
+        
+    lambda_val = base_assist_rate * opp_def_rating
+    poisson_prob = (1 - poisson.pmf(0, lambda_val))
+    
+    final_score = (ai_prob * 0.55) + (poisson_prob * 0.45)
     prob_val = max(18, min(89, int(final_score * 100)))
     
     true_prob = prob_val / 100.0
@@ -207,17 +243,16 @@ def fetch_nhl_goalscorers(team_str: str, team_win_prob: float = 0.5):
                         team_win_prob=team_win_prob
                     )
 
-                    # --- FILTRE CHASSEUR D'OMBRE / VALUE BET ---
-                    # On écarte les stars évidentes (>70% ou cotes < 1.70)
-                    if prob_val > 70 or odds_val < 1.70:
+                    # --- FILTRE SWEET SPOT BUTEURS DE L'OMBRE ---
+                    if prob_val > 58 or prob_val < 25 or odds_val < 1.75:
                         continue
 
-                    if prob_val >= 50:
-                        momentum = "🎯 Pépite à forte valeur (Value)"
-                    elif prob_val >= 38:
-                        momentum = "🕵️‍♂️ Coup de l'ombre / Profondeur"
+                    if prob_val >= 48:
+                        momentum = "🎯 Buteur value (Ombre)"
+                    elif prob_val >= 35:
+                        momentum = "🕵️‍♂️ Finisseur de profondeur"
                     else:
-                        momentum = "📊 Outsider sous-coté"
+                        momentum = "📊 Gâchette sous-cotée"
 
                     scorers.append({
                         "name": f"{first} {last}".strip(),
@@ -229,7 +264,6 @@ def fetch_nhl_goalscorers(team_str: str, team_win_prob: float = 0.5):
                         "sort_val": odds_val
                     })
             if scorers:
-                # Tri par cote décroissante pour privilégier la valeur
                 scorers.sort(key=lambda x: float(x['odds']), reverse=True)
                 for s in scorers:
                     del s['sort_val']
@@ -238,12 +272,12 @@ def fetch_nhl_goalscorers(team_str: str, team_win_prob: float = 0.5):
         pass
     
     return [{
-        "name": f"Joueur de l'ombre ({team_str})", 
+        "name": f"Buteur de l'ombre ({team_str})", 
         "pos": "F", 
         "stats": "Cible en cours", 
         "momentum": "🕵️‍♂️ Recherche de value",
         "prob": "42%", 
-        "odds": "2.85"
+        "odds": "2.50"
     }]
 
 def fetch_nhl_playmakers(team_str: str, team_win_prob: float = 0.5):
@@ -258,13 +292,12 @@ def fetch_nhl_playmakers(team_str: str, team_win_prob: float = 0.5):
             
             for p in skaters:
                 pos = p.get('positionCode', '')
-                if pos in ['L', 'R', 'C', 'F', 'D']:
+                if pos in ['L', 'R', 'C', 'F', 'D']: # Intégration des défenseurs pour les passes
                     first_dict = p.get('firstName', {})
                     last_dict = p.get('lastName', {})
                     first = first_dict.get('default', '') if isinstance(first_dict, dict) else str(first_dict)
                     last = last_dict.get('default', '') if isinstance(last_dict, dict) else str(last_dict)
                     
-                    goals = p.get('goals', 0)
                     assists = p.get('assists', 0)
                     games_played = p.get('gamesPlayed', 1)
                     if games_played == 0:
@@ -272,24 +305,23 @@ def fetch_nhl_playmakers(team_str: str, team_win_prob: float = 0.5):
                     
                     pp_points = p.get('powerPlayPoints', 0)
                     
-                    prob_val, odds_val = calculate_cluster_xgboost_probs(
-                        goals=assists, 
-                        assists=goals,
+                    prob_val, odds_val = calculate_playmaker_probs(
+                        assists=assists,
                         games=games_played,
                         pp_points=pp_points,
                         team_win_prob=team_win_prob
                     )
 
-                    # --- FILTRE PASSEUR DE L'OMBRE / VALUE BET ---
-                    if prob_val > 70 or odds_val < 1.70:
+                    # --- FILTRE SWEET SPOT PASSEURS DE L'OMBRE ---
+                    if prob_val > 58 or prob_val < 25 or odds_val < 1.75:
                         continue
 
-                    if prob_val >= 50:
-                        momentum = "🎯 Passeur value (Ombre)"
-                    elif prob_val >= 38:
-                        momentum = "🕵️‍♂️ Vision de profondeur"
+                    if prob_val >= 48:
+                        momentum = "🎯 Passeur clé (Value)"
+                    elif prob_val >= 35:
+                        momentum = "🕵️‍♂️ Distributeur de l'ombre"
                     else:
-                        momentum = "📊 Distributeur discret"
+                        momentum = "📊 Visionnaire discret"
 
                     playmakers.append({
                         "name": f"{first} {last}".strip(),
@@ -313,7 +345,7 @@ def fetch_nhl_playmakers(team_str: str, team_win_prob: float = 0.5):
         "pos": "F", 
         "stats": "Cible en cours", 
         "momentum": "🕵️‍♂️ Vision stable",
-        "prob": "45%", 
+        "prob": "42%", 
         "odds": "2.50"
     }]
 
