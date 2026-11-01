@@ -1,4 +1,3 @@
-import os
 import hashlib
 import requests
 from datetime import datetime, timedelta
@@ -10,7 +9,7 @@ from pydantic import BaseModel
 from typing import Optional
 from scipy.stats import poisson
 
-app = FastAPI(title="NHL GoalScorer Analytics API", version="33.00")
+app = FastAPI(title="NHL GoalScorer Analytics API", version="34.00")
 
 app.add_middleware(
     CORSMiddleware,
@@ -82,14 +81,32 @@ def serve_home():
     except FileNotFoundError:
         return "<h3>Erreur : Le fichier index.html est introuvable sur le serveur.</h3>"
 
-def calculate_poisson_probs(stat_count: int, games: int, position: str):
+def calculate_advanced_player_probs(
+    stat_count: int, 
+    games: int, 
+    position: str, 
+    is_on_pp1: bool = False, 
+    recent_hot_streak: bool = False
+):
+    """
+    Module de probabilité avancé (Poisson + Contexte Power Play & Momentum).
+    """
     if games <= 0:
         games = 1
+        
     lambda_val = stat_count / games
+    
+    # Application du Momentum (Série en cours)
+    if recent_hot_streak:
+        lambda_val *= 1.18
+        
+    # Application du bonus Power Play 1 (Elite units)
+    if is_on_pp1:
+        lambda_val *= 1.12
+        
+    # Ajustements de position
     if position in ['C', 'L', 'R', 'D']:
-        lambda_val *= 1.10
-    if (stat_count / games) > 0.4:
-        lambda_val *= 1.20
+        lambda_val *= 1.05
         
     prob_zero = poisson.pmf(0, lambda_val)
     prob_anytime = (1 - prob_zero) * 100
@@ -129,6 +146,9 @@ def fetch_nhl_goalscorers(team_str: str):
         if response.status_code == 200:
             data = response.json()
             skaters = data.get('skaters', [])
+            
+            max_pp = max([p.get('powerPlayGoals', 0) for p in skaters] + [1])
+
             for p in skaters:
                 pos = p.get('positionCode', '')
                 if pos in ['L', 'R', 'C', 'F']:
@@ -142,10 +162,16 @@ def fetch_nhl_goalscorers(team_str: str):
                     if games_played == 0:
                         continue
                     
-                    prob_val, odds_val = calculate_poisson_probs(goals, games_played, pos)
+                    pp_goals = p.get('powerPlayGoals', 0)
+                    is_on_pp1 = pp_goals >= (max_pp * 0.4) and pp_goals > 0
+                    recent_hot = (goals / games_played > 0.40)
+                    
+                    prob_val, odds_val = calculate_advanced_player_probs(
+                        goals, games_played, pos, is_on_pp1=is_on_pp1, recent_hot_streak=recent_hot
+                    )
 
                     if prob_val >= 65:
-                        momentum = "🔥 En feu (Streak active)"
+                        momentum = "🔥 En feu (PP Elite)" if is_on_pp1 else "🔥 En feu (Streak active)"
                     elif prob_val >= 52:
                         momentum = "⚡ Forte dynamique"
                     elif prob_val >= 40:
@@ -188,6 +214,9 @@ def fetch_nhl_playmakers(team_str: str):
         if response.status_code == 200:
             data = response.json()
             skaters = data.get('skaters', [])
+            
+            max_pp_pts = max([p.get('powerPlayPoints', 0) for p in skaters] + [1])
+
             for p in skaters:
                 pos = p.get('positionCode', '')
                 if pos in ['L', 'R', 'C', 'F', 'D']:
@@ -201,10 +230,16 @@ def fetch_nhl_playmakers(team_str: str):
                     if games_played == 0:
                         continue
                     
-                    prob_val, odds_val = calculate_poisson_probs(assists, games_played, pos)
+                    pp_points = p.get('powerPlayPoints', 0)
+                    is_on_pp1 = pp_points >= (max_pp_pts * 0.4) and pp_points > 0
+                    recent_hot = (assists / games_played > 0.50)
+                    
+                    prob_val, odds_val = calculate_advanced_player_probs(
+                        assists, games_played, pos, is_on_pp1=is_on_pp1, recent_hot_streak=recent_hot
+                    )
 
                     if prob_val >= 65:
-                        momentum = "🔥 Grande distribution"
+                        momentum = "🔥 Grande distribution (PP Master)" if is_on_pp1 else "🔥 Grande distribution"
                     elif prob_val >= 52:
                         momentum = "⚡ Très actif à la passe"
                     elif prob_val >= 40:
