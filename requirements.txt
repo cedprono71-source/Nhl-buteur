@@ -1,6 +1,8 @@
 fastapi
 uvicorn
+requests
+pydantic
 numpy
 scipy
-pydantic
-requests
+scikit-learn
+xgboost
