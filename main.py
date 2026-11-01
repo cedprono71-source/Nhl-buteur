@@ -19,10 +19,8 @@ async def background_nhl_sync():
     while True:
         try:
             print("🤖 [AUTOPILOT] Actualisation automatique des stats NHL et des modèles ML...")
-            # Ici, l'appli simule la mise à jour quotidienne des données et des modèles en arrière-plan
         except Exception as e:
             print(f"Erreur d'actualisation en arrière-plan : {e}")
-        # S'exécute toutes les 12 heures
         await asyncio.sleep(43200)
 
 @asynccontextmanager
@@ -127,9 +125,6 @@ def calculate_cluster_xgboost_probs(
     opp_def_rating: float = 1.0, 
     team_win_prob: float = 0.5
 ):
-    """
-    Module IA Avancé : K-Means (Profils) + XGBoost (ML) + Poisson.
-    """
     if games <= 0:
         games = 1
         
@@ -212,14 +207,17 @@ def fetch_nhl_goalscorers(team_str: str, team_win_prob: float = 0.5):
                         team_win_prob=team_win_prob
                     )
 
-                    if prob_val >= 65:
-                        momentum = "🔥 En feu (IA ML Elite)"
-                    elif prob_val >= 52:
-                        momentum = "⚡ Forte dynamique"
-                    elif prob_val >= 40:
-                        momentum = "📊 Forme stable"
+                    # --- FILTRE CHASSEUR D'OMBRE / VALUE BET ---
+                    # On écarte les stars évidentes (>70% ou cotes < 1.70)
+                    if prob_val > 70 or odds_val < 1.70:
+                        continue
+
+                    if prob_val >= 50:
+                        momentum = "🎯 Pépite à forte valeur (Value)"
+                    elif prob_val >= 38:
+                        momentum = "🕵️‍♂️ Coup de l'ombre / Profondeur"
                     else:
-                        momentum = "❄️ En recherche de rythme"
+                        momentum = "📊 Outsider sous-coté"
 
                     scorers.append({
                         "name": f"{first} {last}".strip(),
@@ -228,10 +226,11 @@ def fetch_nhl_goalscorers(team_str: str, team_win_prob: float = 0.5):
                         "momentum": momentum,
                         "prob": f"{prob_val}%",
                         "odds": f"{odds_val}",
-                        "sort_val": prob_val
+                        "sort_val": odds_val
                     })
             if scorers:
-                scorers.sort(key=lambda x: x['sort_val'], reverse=True)
+                # Tri par cote décroissante pour privilégier la valeur
+                scorers.sort(key=lambda x: float(x['odds']), reverse=True)
                 for s in scorers:
                     del s['sort_val']
                 return scorers[:6]
@@ -239,12 +238,12 @@ def fetch_nhl_goalscorers(team_str: str, team_win_prob: float = 0.5):
         pass
     
     return [{
-        "name": f"Attaquant Clé ({team_str})", 
+        "name": f"Joueur de l'ombre ({team_str})", 
         "pos": "F", 
-        "stats": "Stats en cours", 
-        "momentum": "📊 Forme stable",
-        "prob": "48%", 
-        "odds": "2.05"
+        "stats": "Cible en cours", 
+        "momentum": "🕵️‍♂️ Recherche de value",
+        "prob": "42%", 
+        "odds": "2.85"
     }]
 
 def fetch_nhl_playmakers(team_str: str, team_win_prob: float = 0.5):
@@ -274,21 +273,23 @@ def fetch_nhl_playmakers(team_str: str, team_win_prob: float = 0.5):
                     pp_points = p.get('powerPlayPoints', 0)
                     
                     prob_val, odds_val = calculate_cluster_xgboost_probs(
-                        goals=assists, # On bascule sur les assists pour les playmakers
+                        goals=assists, 
                         assists=goals,
                         games=games_played,
                         pp_points=pp_points,
                         team_win_prob=team_win_prob
                     )
 
-                    if prob_val >= 65:
-                        momentum = "🔥 Grande distribution (IA Master)"
-                    elif prob_val >= 52:
-                        momentum = "⚡ Très actif à la passe"
-                    elif prob_val >= 40:
-                        momentum = "📊 Vision de jeu stable"
+                    # --- FILTRE PASSEUR DE L'OMBRE / VALUE BET ---
+                    if prob_val > 70 or odds_val < 1.70:
+                        continue
+
+                    if prob_val >= 50:
+                        momentum = "🎯 Passeur value (Ombre)"
+                    elif prob_val >= 38:
+                        momentum = "🕵️‍♂️ Vision de profondeur"
                     else:
-                        momentum = "❄️ Discret"
+                        momentum = "📊 Distributeur discret"
 
                     playmakers.append({
                         "name": f"{first} {last}".strip(),
@@ -297,10 +298,10 @@ def fetch_nhl_playmakers(team_str: str, team_win_prob: float = 0.5):
                         "momentum": momentum,
                         "prob": f"{prob_val}%",
                         "odds": f"{odds_val}",
-                        "sort_val": prob_val
+                        "sort_val": odds_val
                     })
             if playmakers:
-                playmakers.sort(key=lambda x: x['sort_val'], reverse=True)
+                playmakers.sort(key=lambda x: float(x['odds']), reverse=True)
                 for s in playmakers:
                     del s['sort_val']
                 return playmakers[:6]
@@ -308,12 +309,12 @@ def fetch_nhl_playmakers(team_str: str, team_win_prob: float = 0.5):
         pass
     
     return [{
-        "name": f"Passeur Clé ({team_str})", 
+        "name": f"Passeur de l'ombre ({team_str})", 
         "pos": "F", 
-        "stats": "Stats en cours", 
-        "momentum": "📊 Vision stable",
-        "prob": "50%", 
-        "odds": "2.00"
+        "stats": "Cible en cours", 
+        "momentum": "🕵️‍♂️ Vision stable",
+        "prob": "45%", 
+        "odds": "2.50"
     }]
 
 @app.get("/api/matches/nhl")
@@ -411,7 +412,6 @@ def predict_goalscorers(req: MatchRequest):
     
     over_5_5_prob = round(min(85.0, max(30.0, (home_xg + away_xg) * 16.5)), 1)
 
-    # Passage de la probabilité de victoire collective de l'équipe pour booster les joueurs
     home_scorers = fetch_nhl_goalscorers(req.home_team, team_win_prob=home_win_prob / 100.0)
     away_scorers = fetch_nhl_goalscorers(req.away_team, team_win_prob=away_win_prob / 100.0)
     home_playmakers = fetch_nhl_playmakers(req.home_team, team_win_prob=home_win_prob / 100.0)
