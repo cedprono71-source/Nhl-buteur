@@ -23,7 +23,7 @@ from scipy.stats import poisson
 # Compatible avec Render : main:app
 # ============================================================
 
-VERSION = "38.10"
+VERSION = "39.00"
 DB_FILE = os.getenv("DB_FILE", "nhl_history.db")
 PORT = int(os.getenv("PORT", "8000"))
 CACHE_TTL = 300
@@ -32,11 +32,11 @@ PARIS_TZ = ZoneInfo("Europe/Paris")
 API = "https://api-web.nhle.com/v1"
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
-logger = logging.getLogger("NHL-IA-38")
+logger = logging.getLogger("NHL-IA-39")
 
 SESSION = requests.Session()
 SESSION.headers.update({
-    "User-Agent": "Mozilla/5.0 NHL-GoalScorer-Analytics/38.1",
+    "User-Agent": "Mozilla/5.0 NHL-GoalScorer-Analytics/39.0",
     "Accept": "application/json"
 })
 
@@ -291,11 +291,54 @@ def _player_name(p):
     if isinstance(last, dict): last = last.get("default", "")
     return f"{first} {last}".strip()
 
-def fetch_nhl_players(team_str, metric="goal", opponent_factor=1.0, team_factor=1.0):
+def calculate_security_profile(probability_pct, games, recent_form, metric):
+    """Score de régularité statistique, pas une garantie de résultat."""
+    games_factor = min(max(int(games or 0), 0) / 25.0, 1.0)
+    if recent_form:
+        recent_count = recent_form.get("goals" if metric == "goal" else "assists", 0)
+        activity_factor = min(recent_count / (3.0 if metric == "goal" else 4.0), 1.0)
+        if metric == "goal":
+            shot_factor = min((recent_form.get("shots_per_game", 0) or 0) / 3.0, 1.0)
+        else:
+            shot_factor = min((recent_form.get("assists_per_game", 0) or 0) / 0.5, 1.0)
+    else:
+        activity_factor = 0.0
+        shot_factor = 0.0
+    score = (0.55 * float(probability_pct) + 20 * games_factor
+             + 15 * activity_factor + 10 * shot_factor)
+    score = round(clamp(score, 0, 100), 1)
+    if score >= 70 and probability_pct >= 25 and games >= 15:
+        level, label = "high", "Confiance statistique élevée"
+    elif score >= 48 and probability_pct >= 15 and games >= 8:
+        level, label = "medium", "Confiance statistique moyenne"
+    else:
+        level, label = "low", "Profil statistique risqué"
+    return {"security_score": score, "confidence": level,
+            "confidence_label": label}
+
+
+def goalie_adjustment(opponent_stats):
+    """Ajustement modéré à partir des moyennes de gardiens disponibles."""
+    if not opponent_stats:
+        return 1.0
+    factors = []
+    gaa = opponent_stats.get("average_goalie_gaa")
+    save_pct = opponent_stats.get("average_goalie_save_pct")
+    if gaa is not None:
+        factors.append(clamp(1.0 + (float(gaa) - 3.0) * 0.06, 0.90, 1.10))
+    if save_pct is not None:
+        # API NHL renvoie généralement un pourcentage sous forme décimale (ex. 0.910).
+        factors.append(clamp(1.0 + (0.910 - float(save_pct)) * 1.5, 0.94, 1.06))
+    return sum(factors) / len(factors) if factors else 1.0
+
+
+def fetch_nhl_players(team_str, metric="goal", opponent_factor=1.0,
+                      team_factor=1.0, opponent_stats=None):
     stats = fetch_team_stats_summary(team_str)
     if not stats:
         return []
     output = []
+    goalie_factor = goalie_adjustment(opponent_stats)
     for p in stats["skaters"]:
         pos = p.get("positionCode", "")
         if metric == "goal" and pos not in ("L", "R", "C", "F"):
@@ -310,19 +353,23 @@ def fetch_nhl_players(team_str, metric="goal", opponent_factor=1.0, team_factor=
         player_id = p.get("playerId") or p.get("id")
         recent = fetch_player_recent_form(player_id)
         pred = calculate_player_probability(
-            goals, assists, games, recent, opponent_factor, team_factor, metric
+            goals, assists, games, recent,
+            opponent_factor * goalie_factor, team_factor, metric
         )
         total = goals if metric == "goal" else assists
-        label = "buts" if metric == "goal" else "passes"
+        label = "buts" if metric == "goal" else "passes décisives"
         recent_total = recent["goals" if metric == "goal" else "assists"] if recent else 0
+        security = calculate_security_profile(pred["probability"], games, recent, metric)
         output.append({
             "player_id": player_id, "name": _player_name(p), "pos": pos,
-            "stats": f"{total} {label} ({games} m)", "recent_form": recent,
+            "stats": f"{total} {label} ({games} m)", "games_played": games,
+            "recent_form": recent,
             "momentum": "🔥 Forme récente positive" if recent_total > 0 else "📊 Statistiques de saison",
-            "prob": f'{pred["probability"]}%', "odds": pred["fair_odds"],
-            "fair_odds": pred["fair_odds"], "expected_rate": pred["expected_rate"]
+            "prob": f'{pred["probability"]}%', "probability_value": pred["probability"],
+            "odds": pred["fair_odds"], "fair_odds": pred["fair_odds"],
+            "expected_rate": pred["expected_rate"], **security
         })
-    output.sort(key=lambda x: float(x["prob"].replace("%", "")), reverse=True)
+    output.sort(key=lambda x: x["probability_value"], reverse=True)
     return output[:10]
 
 # ---------------------- MATCH MODEL -------------------------
@@ -410,16 +457,25 @@ def build_match_prediction(req):
     model = calculate_match_model(home_xg, away_xg)
     home_factor = clamp(3.0 / away_stats["goals_per_game"], 0.8, 1.2) if away_stats and away_stats["goals_per_game"] > 0 else 1.0
     away_factor = clamp(3.0 / home_stats["goals_per_game"], 0.8, 1.2) if home_stats and home_stats["goals_per_game"] > 0 else 1.0
-    home_scorers = fetch_nhl_players(home_abbr, "goal", home_factor, 1.04)
-    away_scorers = fetch_nhl_players(away_abbr, "goal", away_factor, 0.96)
-    home_playmakers = fetch_nhl_players(home_abbr, "assist", home_factor, 1.04)
-    away_playmakers = fetch_nhl_players(away_abbr, "assist", away_factor, 0.96)
+
+    # Le gardien adverse est intégré avec un poids limité pour éviter les corrections excessives.
+    home_scorers = fetch_nhl_players(home_abbr, "goal", home_factor, 1.04, away_stats)
+    away_scorers = fetch_nhl_players(away_abbr, "goal", away_factor, 0.96, home_stats)
+    home_playmakers = fetch_nhl_players(home_abbr, "assist", home_factor, 1.04, away_stats)
+    away_playmakers = fetch_nhl_players(away_abbr, "assist", away_factor, 0.96, home_stats)
     home_goalies, away_goalies = goalie_analysis(home_stats), goalie_analysis(away_stats)
+
+    # Top 5 MODE SÉCURITÉ : classement par score de régularité, sans promettre un résultat.
+    safe = lambda players: sorted(
+        players, key=lambda x: (x.get("security_score", 0), x.get("probability_value", 0)),
+        reverse=True
+    )[:5]
     result = {
         "version": VERSION, "generated_at": datetime.now(timezone.utc).isoformat(),
         "match": f"{home_abbr} vs {away_abbr}", "home_team": home_abbr, "away_team": away_abbr,
         "home_logo": f"https://assets.nhle.com/logos/nhl/svg/{home_abbr}_light.svg",
         "away_logo": f"https://assets.nhle.com/logos/nhl/svg/{away_abbr}_light.svg",
+        "mode": "SECURITE",
         "match_prediction": {
             **model,
             "home_win_pct": f'{model["home_win_pct_value"]}%',
@@ -430,11 +486,18 @@ def build_match_prediction(req):
         },
         "top_goalscorers_home": home_scorers, "top_goalscorers_away": away_scorers,
         "top_playmakers_home": home_playmakers, "top_playmakers_away": away_playmakers,
+        "safe_top5_goals_home": safe(home_scorers), "safe_top5_goals_away": safe(away_scorers),
+        "safe_top5_assists_home": safe(home_playmakers), "safe_top5_assists_away": safe(away_playmakers),
         "goalies_home": home_goalies, "goalies_away": away_goalies,
         "roster_home": fetch_team_roster(home_abbr), "roster_away": fetch_team_roster(away_abbr),
         "team_stats": {
             "home": {"goals_per_game": home_stats["goals_per_game"], "games": home_stats["games"]} if home_stats else None,
             "away": {"goals_per_game": away_stats["goals_per_game"], "games": away_stats["games"]} if away_stats else None
+        },
+        "goalie_adjustment": {
+            "home_attack_factor": round(goalie_adjustment(away_stats), 3),
+            "away_attack_factor": round(goalie_adjustment(home_stats), 3),
+            "note": "Ajustement modéré basé sur les statistiques de gardiens disponibles."
         },
         "value_analysis": {
             "home_win": calculate_value(model["home_win_pct_value"], req.home_market_odds),
@@ -443,8 +506,9 @@ def build_match_prediction(req):
         },
         "data_quality": {
             "home_stats_available": home_stats is not None, "away_stats_available": away_stats is not None,
-            "recent_player_form": "Données disponibles selon l'API NHL",
-            "injuries": "Les blessures ne sont pas confirmées par cette API. Vérification externe nécessaire."
+            "recent_player_form": "Données disponibles selon l'API NHL; indisponibles pour certains joueurs possibles.",
+            "injuries": "Les blessures et compositions officielles ne sont pas confirmées par cette API. Vérification avant match nécessaire.",
+            "safety_method": "Score statistique combinant probabilité estimée, volume de matchs et forme récente; ce n'est pas une garantie."
         }
     }
     save_prediction(result)
