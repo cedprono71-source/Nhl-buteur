@@ -20,11 +20,11 @@ from pydantic import BaseModel, Field
 from scipy.stats import poisson
 
 # ============================================================
-# NHL GOALSCORER ANALYTICS - VERSION 39.2
+# NHL GOALSCORER ANALYTICS - VERSION 39.4
 # Compatible avec Render : main:app
 # ============================================================
 
-VERSION = "39.20"
+VERSION = "39.40"
 DB_FILE = os.getenv("DB_FILE", "nhl_history.db")
 PORT = int(os.getenv("PORT", "8000"))
 CACHE_TTL = 300
@@ -33,6 +33,10 @@ MAX_WORKERS = 8
 LEAGUE_SH_PCT = 0.105   # % de réussite moyen des tirs (régression vers la moyenne)
 SH_PRIOR_SHOTS = 60      # poids de la moyenne ligue, en tirs
 TOI_FACTOR_RANGE = (0.90, 1.10)
+TEAM_FORM_WEIGHT = 0.35     # poids de la forme des 10 derniers matchs dans les buts attendus
+TEAM_FORM_MIN_GAMES = 5     # nb minimum de matchs récents pour utiliser la forme
+OWN_B2B_FACTOR = 0.95       # équipe en back-to-back : moins de buts marqués
+OPP_B2B_FACTOR = 1.03       # adversaire en back-to-back : un peu plus de buts pour nous
 PARIS_TZ = ZoneInfo("Europe/Paris")
 API = "https://api-web.nhle.com/v1"
 
@@ -165,6 +169,15 @@ def init_database():
                 message TEXT
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS prediction_outcomes (
+                prediction_id INTEGER PRIMARY KEY,
+                game_id TEXT NOT NULL,
+                evaluated_at TEXT NOT NULL,
+                home_score INTEGER, away_score INTEGER,
+                players_json TEXT NOT NULL
+            )
+        """)
         db.commit()
 
 def save_prediction(result):
@@ -189,6 +202,13 @@ def save_prediction(result):
 
 # ---------------------- TEAM DATA ---------------------------
 
+def _weighted_mean(pairs, digits):
+    """Moyenne pondérée par les matchs joués : un gardien remplaçant pèse moins que le titulaire."""
+    total = sum(weight for _, weight in pairs)
+    if total <= 0:
+        return None
+    return round(sum(value * weight for value, weight in pairs) / total, digits)
+
 def fetch_team_stats_summary(team_str):
     abbr = get_nhl_abbr(team_str)
     data = cached_get(f"stats_{abbr}", lambda: nhl_get(f"club-stats/{abbr}/now"), 900)
@@ -198,23 +218,24 @@ def fetch_team_stats_summary(team_str):
     goalies = data.get("goalies") or []
     total_goals = sum(int(p.get("goals", 0) or 0) for p in skaters)
     games = max([int(p.get("gamesPlayed", 0) or 0) for p in skaters] or [0])
-    gaa_values, save_values = [], []
+    gaa_values, save_values = [], []   # listes de (valeur, matchs joués)
     for goalie in goalies:
-        if int(goalie.get("gamesPlayed", 0) or 0) <= 0:
+        gp = int(goalie.get("gamesPlayed", 0) or 0)
+        if gp <= 0:
             continue
         try:
             if goalie.get("goalsAgainstAvg") is not None:
-                gaa_values.append(float(goalie["goalsAgainstAvg"]))
+                gaa_values.append((float(goalie["goalsAgainstAvg"]), gp))
             if goalie.get("savePctg") is not None:
-                save_values.append(float(goalie["savePctg"]))
+                save_values.append((float(goalie["savePctg"]), gp))
         except (TypeError, ValueError):
             pass
     return {
         "abbr": abbr, "goals": total_goals, "games": games,
         "goals_per_game": round(total_goals / max(1, games), 3),
         "skaters": skaters, "goalies": goalies,
-        "average_goalie_gaa": round(sum(gaa_values) / len(gaa_values), 3) if gaa_values else None,
-        "average_goalie_save_pct": round(sum(save_values) / len(save_values), 4) if save_values else None
+        "average_goalie_gaa": _weighted_mean(gaa_values, 3),
+        "average_goalie_save_pct": _weighted_mean(save_values, 4)
     }
 
 def fetch_team_roster(team_str):
@@ -271,6 +292,76 @@ def fetch_player_recent_form(player_id):
         "assists_per_game": round(assists / count, 3),
         "shots_per_game": round(shots / count, 2)
     }
+
+# ---------------------- CONTEXTE D'ÉQUIPE ------------------
+
+UPCOMING_STATES = ("FUT", "PRE", "LIVE", "CRIT")
+PLAYED_STATES = ("FINAL", "OFF")
+
+def fetch_team_schedule(abbr):
+    return cached_get(f"sched_{abbr}", lambda: nhl_get(f"club-schedule-season/{abbr}/now"), 900)
+
+def add_team_context(stats, abbr, game_date=None):
+    """Ajoute à `stats` : jours de repos, back-to-back, forme sur les 10 derniers matchs.
+
+    Si la date du match n'est pas donnée, on prend le prochain match non terminé de l'équipe.
+    Sans calendrier disponible, les champs restent à None (aucun effet sur le modèle).
+    """
+    if not stats:
+        return stats
+    stats.update({"rest_days": None, "b2b": False, "recent_games": 0,
+                  "recent_gf": None, "recent_ga": None, "effective_gaa": stats.get("average_goalie_gaa")})
+    data = fetch_team_schedule(abbr)
+    games = [g for g in (data or {}).get("games", []) if g.get("gameDate")
+             and g.get("gameType", 2) in (2, 3)]
+    if not games:
+        return stats
+    target = game_date
+    if not target:
+        upcoming = sorted(g["gameDate"] for g in games if g.get("gameState") in UPCOMING_STATES)
+        target = upcoming[0] if upcoming else None
+    if not target:
+        return stats
+    prior = sorted((g for g in games if g.get("gameState") in PLAYED_STATES and g["gameDate"] < target),
+                   key=lambda g: g["gameDate"])
+    if not prior:
+        return stats
+    stats["rest_days"] = (datetime.strptime(target, "%Y-%m-%d")
+                          - datetime.strptime(prior[-1]["gameDate"], "%Y-%m-%d")).days
+    stats["b2b"] = stats["rest_days"] == 1
+    gf = ga = 0
+    last = prior[-10:]
+    for g in last:
+        home, away = g.get("homeTeam", {}), g.get("awayTeam", {})
+        hs, as_ = int(home.get("score", 0) or 0), int(away.get("score", 0) or 0)
+        if home.get("abbrev") == abbr:
+            gf, ga = gf + hs, ga + as_
+        else:
+            gf, ga = gf + as_, ga + hs
+    n = len(last)
+    stats["recent_games"] = n
+    stats["recent_gf"] = round(gf / n, 2)
+    stats["recent_ga"] = round(ga / n, 2)
+    base = stats.get("average_goalie_gaa")
+    if n >= TEAM_FORM_MIN_GAMES:
+        stats["effective_gaa"] = round(
+            (1 - TEAM_FORM_WEIGHT) * base + TEAM_FORM_WEIGHT * stats["recent_ga"], 3
+        ) if base is not None else stats["recent_ga"]
+    return stats
+
+def situational_factor(own_stats, opp_stats):
+    """Fatigue : notre back-to-back réduit notre attaque, celui de l'adversaire l'augmente."""
+    factor = 1.0
+    if own_stats and own_stats.get("b2b"):
+        factor *= OWN_B2B_FACTOR
+    if opp_stats and opp_stats.get("b2b"):
+        factor *= OPP_B2B_FACTOR
+    return factor
+
+def _effective_gaa(stats):
+    if not stats:
+        return None
+    return stats.get("effective_gaa") if stats.get("effective_gaa") is not None else stats.get("average_goalie_gaa")
 
 def prefetch_recent_forms(player_ids):
     """Récupère en parallèle la forme récente (résultats mis en cache), renvoie {id: forme}."""
@@ -391,7 +482,7 @@ def opponent_defense_factor(opponent_stats):
     """
     if not opponent_stats:
         return 1.0
-    gaa = opponent_stats.get("average_goalie_gaa")
+    gaa = _effective_gaa(opponent_stats)
     if gaa is None or float(gaa) <= 0:
         return 1.0
     return clamp(float(gaa) / 3.0, 0.8, 1.2)
@@ -510,10 +601,14 @@ def calculate_team_expectation(team_stats, opponent_stats, home=False):
     if not team_stats or team_stats["games"] <= 0:
         return 3.0
     attack = team_stats["goals_per_game"]
-    goalie_gaa = opponent_stats.get("average_goalie_gaa") if opponent_stats else None
+    recent_gf = team_stats.get("recent_gf")
+    if recent_gf is not None and team_stats.get("recent_games", 0) >= TEAM_FORM_MIN_GAMES:
+        attack = (1 - TEAM_FORM_WEIGHT) * attack + TEAM_FORM_WEIGHT * recent_gf
+    goalie_gaa = _effective_gaa(opponent_stats)
     defensive_factor = clamp(goalie_gaa / 3.0, 0.75, 1.25) if goalie_gaa is not None else 1.0
     home_factor = 1.04 if home else 0.96
-    return round(clamp(attack * defensive_factor * home_factor, 1.5, 5.5), 2)
+    situation = situational_factor(team_stats, opponent_stats)
+    return round(clamp(attack * defensive_factor * home_factor * situation, 1.5, 5.5), 2)
 
 # ---------------------- PREDICTION --------------------------
 
@@ -521,6 +616,7 @@ class MatchRequest(BaseModel):
     league: str = "NHL"
     home_team: str = Field(min_length=2)
     away_team: str = Field(min_length=2)
+    game_date: Optional[str] = None   # YYYY-MM-DD, sinon prochain match de l'équipe
     home_id: Optional[str] = None
     away_id: Optional[str] = None
     home_market_odds: Optional[float] = Field(default=None, gt=1, le=1000)
@@ -540,8 +636,18 @@ def build_match_prediction(req):
     away_abbr = get_nhl_abbr(req.away_team)
     if home_abbr == away_abbr:
         raise ValueError("Les deux équipes du match doivent être différentes.")
+    if req.game_date:
+        try:
+            datetime.strptime(req.game_date, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("game_date invalide. Format YYYY-MM-DD.")
     home_stats = fetch_team_stats_summary(home_abbr)
     away_stats = fetch_team_stats_summary(away_abbr)
+    try:
+        add_team_context(home_stats, home_abbr, req.game_date)
+        add_team_context(away_stats, away_abbr, req.game_date)
+    except Exception:
+        logger.exception("Contexte d'équipe indisponible (calendrier)")
     home_xg = calculate_team_expectation(home_stats, away_stats, True)
     away_xg = calculate_team_expectation(away_stats, home_stats, False)
     model = calculate_match_model(home_xg, away_xg)
@@ -552,10 +658,12 @@ def build_match_prediction(req):
     away_factor = opponent_defense_factor(home_stats)
 
     # Le % d'arrêts adverse est intégré avec un poids limité (voir goalie_adjustment).
-    home_scorers = fetch_nhl_players(home_abbr, "goal", home_factor, 1.04, away_stats)
-    away_scorers = fetch_nhl_players(away_abbr, "goal", away_factor, 0.96, home_stats)
-    home_playmakers = fetch_nhl_players(home_abbr, "assist", home_factor, 1.04, away_stats)
-    away_playmakers = fetch_nhl_players(away_abbr, "assist", away_factor, 0.96, home_stats)
+    home_team_factor = 1.04 * situational_factor(home_stats, away_stats)
+    away_team_factor = 0.96 * situational_factor(away_stats, home_stats)
+    home_scorers = fetch_nhl_players(home_abbr, "goal", home_factor, home_team_factor, away_stats)
+    away_scorers = fetch_nhl_players(away_abbr, "goal", away_factor, away_team_factor, home_stats)
+    home_playmakers = fetch_nhl_players(home_abbr, "assist", home_factor, home_team_factor, away_stats)
+    away_playmakers = fetch_nhl_players(away_abbr, "assist", away_factor, away_team_factor, home_stats)
     home_goalies, away_goalies = goalie_analysis(home_stats), goalie_analysis(away_stats)
 
     # Top 5 MODE SÉCURITÉ : classement par score de régularité, sans promettre un résultat.
@@ -586,6 +694,11 @@ def build_match_prediction(req):
         "team_stats": {
             "home": {"goals_per_game": home_stats["goals_per_game"], "games": home_stats["games"]} if home_stats else None,
             "away": {"goals_per_game": away_stats["goals_per_game"], "games": away_stats["games"]} if away_stats else None
+        },
+        "context": {
+            side: ({k: stats.get(k) for k in ("rest_days", "b2b", "recent_games", "recent_gf",
+                                              "recent_ga", "effective_gaa")} if stats else None)
+            for side, stats in (("home", home_stats), ("away", away_stats))
         },
         "goalie_adjustment": {
             "home_attack_factor": round(home_factor * goalie_adjustment(away_stats), 3),
@@ -690,11 +803,151 @@ async def background_nhl_sync():
             logger.info("AUTOPILOT : synchronisation NHL")
             await asyncio.to_thread(perform_sync)
             logger.info("AUTOPILOT : synchronisation terminée")
+            summary = await asyncio.to_thread(evaluate_pending, 100)
+            logger.info("AUTOPILOT : évaluation %s", summary)
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("Erreur synchronisation automatique")
         await asyncio.sleep(43200)
+
+# ---------------------- EVALUATION --------------------------
+
+FINAL_STATES = ("FINAL", "OFF")
+
+def _find_final_game(home_abbr, away_abbr, created_at_iso):
+    """Cherche le match terminé correspondant à une prédiction (None si pas encore joué)."""
+    created = datetime.fromisoformat(created_at_iso)
+    for offset in (0, 1, 2):
+        day = (created + timedelta(days=offset)).strftime("%Y-%m-%d")
+        data = fetch_nhl_score(day)
+        for game in (data or {}).get("games", []):
+            if (game.get("homeTeam", {}).get("abbrev") != home_abbr
+                    or game.get("awayTeam", {}).get("abbrev") != away_abbr):
+                continue
+            start_utc = game.get("startTimeUTC")
+            if start_utc:
+                start = datetime.fromisoformat(start_utc.replace("Z", "+00:00"))
+                if start < created:
+                    continue  # prédiction faite après le coup d'envoi : exclue du backtest
+            if game.get("gameState") in FINAL_STATES:
+                return game
+    return None
+
+def _parse_boxscore(box):
+    players = {}
+    stats = (box or {}).get("playerByGameStats") or {}
+    for side in ("homeTeam", "awayTeam"):
+        for group in ("forwards", "defense"):
+            for pl in (stats.get(side) or {}).get(group, []) or []:
+                pid = pl.get("playerId")
+                if pid:
+                    players[str(pid)] = [int(pl.get("goals", 0) or 0), int(pl.get("assists", 0) or 0)]
+    return players
+
+def evaluate_pending(limit=50):
+    """Compare les prédictions passées aux résultats réels (matchs terminés uniquement)."""
+    with db_connection() as db:
+        rows = db.execute("""
+            SELECT p.id, p.created_at, p.home_team, p.away_team
+            FROM predictions p LEFT JOIN prediction_outcomes o ON o.prediction_id = p.id
+            WHERE o.prediction_id IS NULL ORDER BY p.id DESC LIMIT ?
+        """, (int(clamp(limit, 1, 200)),)).fetchall()
+    evaluated, pending, errors = 0, 0, 0
+    for row in rows:
+        try:
+            game = _find_final_game(row["home_team"], row["away_team"], row["created_at"])
+            if not game:
+                pending += 1
+                continue
+            game_id = str(game.get("id"))
+            box = nhl_get(f"gamecenter/{game_id}/boxscore")
+            players = _parse_boxscore(box)
+            with db_connection() as db:
+                db.execute("""
+                    INSERT OR REPLACE INTO prediction_outcomes
+                    (prediction_id, game_id, evaluated_at, home_score, away_score, players_json)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (row["id"], game_id, datetime.now(timezone.utc).isoformat(),
+                      int(game.get("homeTeam", {}).get("score", 0) or 0),
+                      int(game.get("awayTeam", {}).get("score", 0) or 0),
+                      json.dumps(players)))
+                db.commit()
+            evaluated += 1
+        except Exception as exc:
+            errors += 1
+            logger.warning("Évaluation prédiction %s : %s", row["id"], exc)
+    return {"evaluated": evaluated, "pending": pending, "errors": errors}
+
+def _calibration(pairs):
+    """pairs = [(probabilité 0-1, résultat 0/1)] -> Brier, taux de réussite et calibration par tranche."""
+    n = len(pairs)
+    if n == 0:
+        return {"n": 0}
+    brier = sum((p - y) ** 2 for p, y in pairs) / n
+    base = sum(y for _, y in pairs) / n
+    buckets = []
+    for low, high in ((0, .15), (.15, .25), (.25, .35), (.35, 1.01)):
+        sel = [(p, y) for p, y in pairs if low <= p < high]
+        if sel:
+            buckets.append({
+                "range": f"{int(low * 100)}-{min(int(high * 100), 100)}%", "n": len(sel),
+                "avg_predicted_pct": round(sum(p for p, _ in sel) / len(sel) * 100, 1),
+                "actual_pct": round(sum(y for _, y in sel) / len(sel) * 100, 1)
+            })
+    return {"n": n, "brier": round(brier, 4), "brier_constant_baseline": round(base * (1 - base), 4),
+            "actual_rate_pct": round(base * 100, 1), "buckets": buckets}
+
+def compute_metrics():
+    """Métriques sur les matchs évalués (une seule prédiction par match : la plus récente)."""
+    with db_connection() as db:
+        rows = db.execute("""
+            SELECT p.id, p.prediction_json, o.game_id, o.home_score, o.away_score, o.players_json
+            FROM prediction_outcomes o JOIN predictions p ON p.id = o.prediction_id
+            ORDER BY p.id DESC
+        """).fetchall()
+    latest = {}
+    for row in rows:
+        latest.setdefault(row["game_id"], row)
+
+    winner, over55 = [], []
+    pools = {"goal": [], "assist": [], "safe_goal": [], "safe_assist": []}
+    for row in latest.values():
+        pred = json.loads(row["prediction_json"])
+        mp = pred.get("match_prediction", {})
+        actual = json.loads(row["players_json"])
+        if mp.get("home_win_pct_value") is not None:
+            winner.append((mp["home_win_pct_value"] / 100, 1 if row["home_score"] > row["away_score"] else 0))
+        if mp.get("over_5_5_goals_prob_value") is not None:
+            over55.append((mp["over_5_5_goals_prob_value"] / 100,
+                           1 if row["home_score"] + row["away_score"] >= 6 else 0))
+        for side in ("home", "away"):
+            for key, metric, idx in (("top_goalscorers", "goal", 0), ("top_playmakers", "assist", 1)):
+                for pl in pred.get(f"{key}_{side}", []) or []:
+                    stat = actual.get(str(pl.get("player_id")))
+                    if stat is not None:  # joueur absent du match : ignoré
+                        pools[metric].append((pl["probability_value"] / 100, 1 if stat[idx] >= 1 else 0))
+            for key, metric, idx in (("safe_top5_goals", "safe_goal", 0), ("safe_top5_assists", "safe_assist", 1)):
+                for pl in pred.get(f"{key}_{side}", []) or []:
+                    stat = actual.get(str(pl.get("player_id")))
+                    if stat is not None:
+                        pools[metric].append((pl["probability_value"] / 100, 1 if stat[idx] >= 1 else 0))
+
+    def hit_rate(pairs):
+        return {"n": len(pairs), "hit_rate_pct": round(sum(y for _, y in pairs) / len(pairs) * 100, 1)} if pairs else {"n": 0}
+
+    return {
+        "games_evaluated": len(latest),
+        "match_winner_home": {**_calibration(winner),
+                              "accuracy_pct": round(sum(1 for p, y in winner if (p >= .5) == bool(y)) / len(winner) * 100, 1) if winner else None},
+        "over_5_5": _calibration(over55),
+        "goalscorer_calibration": _calibration(pools["goal"]),
+        "playmaker_calibration": _calibration(pools["assist"]),
+        "safe_top5_goals": hit_rate(pools["safe_goal"]),
+        "safe_top5_assists": hit_rate(pools["safe_assist"]),
+        "notes": "Brier plus bas = mieux. Comparer à brier_constant_baseline : en dessous, le modèle apporte de l'information. "
+                 "Il faut plusieurs centaines de joueurs évalués avant de tirer une conclusion."
+    }
 
 # ---------------------- FASTAPI -----------------------------
 
@@ -795,6 +1048,16 @@ def get_sync_history():
     with db_connection() as db:
         rows = db.execute("SELECT * FROM sync_history ORDER BY id DESC LIMIT 30").fetchall()
     return {"synchronizations": [dict(row) for row in rows]}
+
+@app.get("/api/evaluate")
+def api_evaluate(limit: int = 50):
+    """Évalue les prédictions dont le match est terminé."""
+    return evaluate_pending(limit)
+
+@app.get("/api/metrics")
+def api_metrics():
+    """Précision et calibration du modèle sur les matchs déjà évalués."""
+    return compute_metrics()
 
 @app.get("/api/football/matches")
 def football_matches(date: Optional[str] = None):
