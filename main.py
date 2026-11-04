@@ -6,6 +6,8 @@ import sqlite3
 import asyncio
 import logging
 import re
+import secrets
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -17,19 +19,24 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
-from scipy.stats import poisson
+from scipy.stats import nbinom, poisson
 
 # ============================================================
-# NHL GOALSCORER ANALYTICS - VERSION 39.4
+# NHL GOALSCORER ANALYTICS - VERSION 39.7
 # Compatible avec Render : main:app
 # ============================================================
 
-VERSION = "39.40"
+VERSION = "39.70"
 DB_FILE = os.getenv("DB_FILE", "nhl_history.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()   # si défini : PostgreSQL externe (ex. Neon), sinon SQLite local
+USE_PG = bool(DATABASE_URL)
 PORT = int(os.getenv("PORT", "8000"))
 CACHE_TTL = 300
 TIMEOUT = 15
 MAX_WORKERS = 8
+CRON_SECRET = os.getenv("CRON_SECRET", "")              # si défini, /api/cron exige ?key=...
+AUTO_PREDICT_HOURS_AHEAD = int(os.getenv("AUTO_PREDICT_HOURS_AHEAD", "10"))
+SYNC_MIN_INTERVAL_HOURS = 6
 LEAGUE_SH_PCT = 0.105   # % de réussite moyen des tirs (régression vers la moyenne)
 SH_PRIOR_SHOTS = 60      # poids de la moyenne ligue, en tirs
 TOI_FACTOR_RANGE = (0.90, 1.10)
@@ -37,6 +44,13 @@ TEAM_FORM_WEIGHT = 0.35     # poids de la forme des 10 derniers matchs dans les 
 TEAM_FORM_MIN_GAMES = 5     # nb minimum de matchs récents pour utiliser la forme
 OWN_B2B_FACTOR = 0.95       # équipe en back-to-back : moins de buts marqués
 OPP_B2B_FACTOR = 1.03       # adversaire en back-to-back : un peu plus de buts pour nous
+GOALS_DISPERSION = 30       # loi binomiale négative : variance = mu + mu^2/30 (Poisson = infini)
+ELO_START = 1500
+ELO_K = 6                   # vitesse d'apprentissage par match
+ELO_HOME_ADVANTAGE = 30     # points Elo d'avantage à domicile (~54 % de victoires)
+ELO_SEASON_REGRESSION = 2 / 3   # part conservée de l'écart à la moyenne d'une saison à l'autre
+ELO_WEIGHT = 0.40           # poids d'Elo dans la probabilité de victoire finale
+OT_EDGE_SHARE = 0.25        # la prolongation reste proche du 50/50 : seulement 25 % de l'écart de force
 PARIS_TZ = ZoneInfo("Europe/Paris")
 API = "https://api-web.nhle.com/v1"
 
@@ -143,27 +157,61 @@ def nhl_get(endpoint):
 
 # ---------------------- DATABASE ----------------------------
 
+class _PgConnection:
+    """Enveloppe PostgreSQL avec la même interface que sqlite3 (execute / commit / with)."""
+
+    def __init__(self):
+        import psycopg2
+        import psycopg2.extras
+        self._conn = psycopg2.connect(DATABASE_URL, connect_timeout=10,
+                                      cursor_factory=psycopg2.extras.RealDictCursor)
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql.replace("?", "%s"), params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            if exc_type is None:
+                self._conn.commit()
+            else:
+                self._conn.rollback()
+        finally:
+            self._conn.close()
+        return False
+
 def db_connection():
+    if USE_PG:
+        return _PgConnection()
     db = sqlite3.connect(DB_FILE, timeout=30)
     db.row_factory = sqlite3.Row
     return db
 
 def init_database():
+    pk = "SERIAL PRIMARY KEY" if USE_PG else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    real = "DOUBLE PRECISION" if USE_PG else "REAL"
     with db_connection() as db:
-        db.execute("""
+        db.execute(f"""
             CREATE TABLE IF NOT EXISTS predictions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {pk},
                 created_at TEXT NOT NULL,
                 match_name TEXT NOT NULL,
                 home_team TEXT NOT NULL,
                 away_team TEXT NOT NULL,
-                home_xg REAL, away_xg REAL, home_win REAL, away_win REAL,
-                over_55 REAL, prediction_json TEXT NOT NULL
+                home_xg {real}, away_xg {real}, home_win {real}, away_win {real},
+                over_55 {real}, prediction_json TEXT NOT NULL
             )
         """)
-        db.execute("""
+        db.execute(f"""
             CREATE TABLE IF NOT EXISTS sync_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {pk},
                 created_at TEXT NOT NULL,
                 status TEXT NOT NULL,
                 message TEXT
@@ -438,7 +486,9 @@ def calculate_player_probability(goals, assists, games, recent_form=None,
         "expected_rate": round(expected_rate, 3),
         "season_rate": round(season_rate, 3),
         "recent_rate": round(recent_rate, 3) if recent_rate is not None else None,
-        "toi_factor": round(ice_factor, 3)
+        "toi_factor": round(ice_factor, 3),
+        "prob_2plus_goals": (round((1 - math.exp(-expected_rate) * (1 + expected_rate)) * 100, 1)
+                             if metric == "goal" else None)
     }
 
 def _player_name(p):
@@ -548,21 +598,90 @@ def fetch_nhl_players(team_str, metric="goal", opponent_factor=1.0,
             "momentum": "🔥 Forme récente positive" if recent_total > 0 else "📊 Statistiques de saison",
             "prob": f'{pred["probability"]}%', "probability_value": pred["probability"],
             "odds": pred["fair_odds"], "fair_odds": pred["fair_odds"],
-            "expected_rate": pred["expected_rate"], "toi_factor": pred["toi_factor"], **security
+            "expected_rate": pred["expected_rate"], "toi_factor": pred["toi_factor"],
+            "prob_2plus": pred["prob_2plus_goals"], **security
         })
     output.sort(key=lambda x: x["probability_value"], reverse=True)
     return output[:10]
 
+# ---------------------- ELO ---------------------------------
+
+def elo_win_prob(home_elo, away_elo):
+    """Probabilité de victoire de l'équipe à domicile (avantage du domicile inclus)."""
+    return 1.0 / (1.0 + 10 ** (-(home_elo - away_elo + ELO_HOME_ADVANTAGE) / 400.0))
+
+def _fetch_past_schedule(abbr, season):
+    return cached_get(f"sched_{abbr}_{season}",
+                      lambda: nhl_get(f"club-schedule-season/{abbr}/{season}"), 86400)
+
+def _collect_played_games(schedules):
+    games = {}
+    for data in schedules:
+        for g in (data or {}).get("games", []) or []:
+            if g.get("gameState") not in PLAYED_STATES or g.get("gameType", 2) not in (2, 3):
+                continue
+            home, away = g.get("homeTeam", {}), g.get("awayTeam", {})
+            if not g.get("id") or not home.get("abbrev") or not away.get("abbrev"):
+                continue
+            games[g["id"]] = (g.get("gameDate", ""), g["id"], home["abbrev"], away["abbrev"],
+                              int(home.get("score", 0) or 0), int(away.get("score", 0) or 0))
+    return sorted(games.values())
+
+def _replay_elo(games, ratings):
+    for _, _, home, away, hs, as_ in games:
+        if hs == as_:
+            continue
+        rh = ratings.setdefault(home, ELO_START)
+        ra = ratings.setdefault(away, ELO_START)
+        expected = elo_win_prob(rh, ra)
+        result = 1.0 if hs > as_ else 0.0
+        margin = 1.0 + math.log(abs(hs - as_))   # victoire large = mise à jour un peu plus forte
+        delta = ELO_K * margin * (result - expected)
+        ratings[home] = rh + delta
+        ratings[away] = ra - delta
+    return ratings
+
+def build_elo_table():
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        current = list(pool.map(fetch_team_schedule, ALL_TEAMS))
+    games_now = _collect_played_games(current)
+    ratings = {team: float(ELO_START) for team in ALL_TEAMS}
+
+    # Saison précédente (si disponible) pour ne pas partir de zéro en début de saison.
+    season_id = next((str(g.get("season")) for d in current for g in (d or {}).get("games", [])
+                      if g.get("season")), None)
+    if season_id and len(season_id) == 8:
+        prev = f"{int(season_id[:4]) - 1}{int(season_id[4:]) - 1}"
+        try:
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+                past = list(pool.map(lambda t: _fetch_past_schedule(t, prev), ALL_TEAMS))
+            _replay_elo(_collect_played_games(past), ratings)
+            for team in list(ratings):
+                ratings[team] = ELO_START + (ratings[team] - ELO_START) * ELO_SEASON_REGRESSION
+        except Exception:
+            logger.exception("Elo : saison précédente indisponible")
+    _replay_elo(games_now, ratings)
+    return {"ratings": {t: round(r, 1) for t, r in ratings.items()}, "games_used": len(games_now)}
+
+def get_elo_table():
+    return cached_get("elo_table", build_elo_table, 3600)
+
 # ---------------------- MATCH MODEL -------------------------
 
-def calculate_match_model(home_xg, away_xg):
+def goals_pmf(mu, k):
+    """Probabilité de marquer k buts : binomiale négative (légère sur-dispersion, plus réaliste que Poisson)."""
+    return float(nbinom.pmf(k, GOALS_DISPERSION, GOALS_DISPERSION / (GOALS_DISPERSION + mu)))
+
+def calculate_match_model(home_xg, away_xg, ot_home_share=0.5):
     home_xg = clamp(float(home_xg), 0.2, 8)
     away_xg = clamp(float(away_xg), 0.2, 8)
+    home_pmf = [goals_pmf(home_xg, k) for k in range(16)]
+    away_pmf = [goals_pmf(away_xg, k) for k in range(16)]
     home_reg = away_reg = draw = over55 = under55 = 0.0
     best_probability, best_home, best_away = -1, 0, 0
     for hg in range(16):
         for ag in range(16):
-            prob = float(poisson.pmf(hg, home_xg) * poisson.pmf(ag, away_xg))
+            prob = home_pmf[hg] * away_pmf[ag]
             if hg > ag: home_reg += prob
             elif ag > hg: away_reg += prob
             else: draw += prob
@@ -570,9 +689,10 @@ def calculate_match_model(home_xg, away_xg):
             else: under55 += prob
             if prob > best_probability:
                 best_probability, best_home, best_away = prob, hg, ag
-    # Pour le marché vainqueur incluant OT, répartition neutre du cas d'égalité
-    home_final = home_reg + draw * 0.5
-    away_final = away_reg + draw * 0.5
+    # Égalité en temps réglementaire -> prolongation / tirs au but, répartie selon ot_home_share
+    ot_home_share = clamp(float(ot_home_share), 0.0, 1.0)
+    home_final = home_reg + draw * ot_home_share
+    away_final = away_reg + draw * (1 - ot_home_share)
     total = home_final + away_final or 1
     return {
         "home_win_pct_value": round(home_final / total * 100, 1),
@@ -650,7 +770,26 @@ def build_match_prediction(req):
         logger.exception("Contexte d'équipe indisponible (calendrier)")
     home_xg = calculate_team_expectation(home_stats, away_stats, True)
     away_xg = calculate_team_expectation(away_stats, home_stats, False)
-    model = calculate_match_model(home_xg, away_xg)
+    # Elo : probabilité de victoire indépendante des buts, mélangée au modèle de buts.
+    elo_info = None
+    elo_p = None
+    try:
+        table = get_elo_table()
+        if table:
+            home_elo, away_elo = table["ratings"].get(home_abbr), table["ratings"].get(away_abbr)
+            if home_elo is not None and away_elo is not None:
+                elo_p = elo_win_prob(home_elo, away_elo)
+                elo_info = {"home_elo": home_elo, "away_elo": away_elo,
+                            "home_win_pct": round(elo_p * 100, 1), "weight": ELO_WEIGHT,
+                            "games_used": table["games_used"]}
+    except Exception:
+        logger.exception("Elo indisponible")
+    ot_share = clamp(0.5 + (elo_p - 0.5) * OT_EDGE_SHARE, 0.45, 0.55) if elo_p is not None else 0.5
+    model = calculate_match_model(home_xg, away_xg, ot_share)
+    if elo_p is not None:
+        model["home_win_pct_value"] = round((1 - ELO_WEIGHT) * model["home_win_pct_value"]
+                                            + ELO_WEIGHT * elo_p * 100, 1)
+        model["away_win_pct_value"] = round(100 - model["home_win_pct_value"], 1)
 
     # Facteur adverse : un attaquant domicile profite d'une défense VISITEUSE faible
     # (buts encaissés élevés), et inversement.
@@ -695,6 +834,7 @@ def build_match_prediction(req):
             "home": {"goals_per_game": home_stats["goals_per_game"], "games": home_stats["games"]} if home_stats else None,
             "away": {"goals_per_game": away_stats["goals_per_game"], "games": away_stats["games"]} if away_stats else None
         },
+        "elo": elo_info,
         "context": {
             side: ({k: stats.get(k) for k in ("rest_days", "b2b", "recent_games", "recent_gf",
                                               "recent_ga", "effective_gaa")} if stats else None)
@@ -802,6 +942,7 @@ async def background_nhl_sync():
         try:
             logger.info("AUTOPILOT : synchronisation NHL")
             await asyncio.to_thread(perform_sync)
+            await asyncio.to_thread(get_elo_table)
             logger.info("AUTOPILOT : synchronisation terminée")
             summary = await asyncio.to_thread(evaluate_pending, 100)
             logger.info("AUTOPILOT : évaluation %s", summary)
@@ -865,9 +1006,13 @@ def evaluate_pending(limit=50):
             players = _parse_boxscore(box)
             with db_connection() as db:
                 db.execute("""
-                    INSERT OR REPLACE INTO prediction_outcomes
+                    INSERT INTO prediction_outcomes
                     (prediction_id, game_id, evaluated_at, home_score, away_score, players_json)
                     VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (prediction_id) DO UPDATE SET
+                        game_id = EXCLUDED.game_id, evaluated_at = EXCLUDED.evaluated_at,
+                        home_score = EXCLUDED.home_score, away_score = EXCLUDED.away_score,
+                        players_json = EXCLUDED.players_json
                 """, (row["id"], game_id, datetime.now(timezone.utc).isoformat(),
                       int(game.get("homeTeam", {}).get("score", 0) or 0),
                       int(game.get("awayTeam", {}).get("score", 0) or 0),
@@ -949,6 +1094,69 @@ def compute_metrics():
                  "Il faut plusieurs centaines de joueurs évalués avant de tirer une conclusion."
     }
 
+# ---------------------- AUTOMATISATION ----------------------
+
+JOB_LOCK = threading.Lock()
+JOB_STATE = {"running": False, "last_start": None, "last_end": None, "last_summary": None}
+
+def predict_todays_games(hours_ahead=AUTO_PREDICT_HOURS_AHEAD):
+    """Prédit les matchs qui commencent dans les `hours_ahead` prochaines heures, une seule fois par match."""
+    now = datetime.now(timezone.utc)
+    horizon = now + timedelta(hours=hours_ahead)
+    days = sorted({now.astimezone(PARIS_TZ).strftime("%Y-%m-%d"),
+                   horizon.astimezone(PARIS_TZ).strftime("%Y-%m-%d")})
+    created = skipped = errors = 0
+    for day in days:
+        for match in get_nhl_matches_for_date(day)["matches"]:
+            try:
+                start = datetime.fromisoformat(match["start_time"]).astimezone(timezone.utc)
+                home, away = match.get("home_abbr"), match.get("away_abbr")
+                if not home or not away or not (now < start <= horizon):
+                    continue
+                with db_connection() as db:
+                    recent = db.execute(
+                        "SELECT created_at FROM predictions WHERE home_team=? AND away_team=? "
+                        "ORDER BY id DESC LIMIT 10", (home, away)
+                    ).fetchall()
+                window_start = start - timedelta(hours=24)
+                if any(window_start <= datetime.fromisoformat(r["created_at"]) < start for r in recent):
+                    skipped += 1
+                    continue
+                build_match_prediction(MatchRequest(home_team=home, away_team=away))
+                created += 1
+            except Exception:
+                errors += 1
+                logger.exception("Prédiction automatique %s", match.get("game_id"))
+    return {"created": created, "already_done": skipped, "errors": errors}
+
+def _last_sync_age_hours():
+    with db_connection() as db:
+        row = db.execute("SELECT created_at FROM sync_history ORDER BY id DESC LIMIT 1").fetchone()
+    if not row:
+        return None
+    return (datetime.now(timezone.utc) - datetime.fromisoformat(row["created_at"])).total_seconds() / 3600
+
+def run_cron_job():
+    """Tâche complète : synchro (si ancienne), Elo, prédictions du jour, évaluation des résultats."""
+    if not JOB_LOCK.acquire(blocking=False):
+        return False
+    summary = {}
+    JOB_STATE.update(running=True, last_start=datetime.now(timezone.utc).isoformat())
+    try:
+        age = _last_sync_age_hours()
+        if age is None or age >= SYNC_MIN_INTERVAL_HOURS:
+            summary["sync"] = perform_sync()["status"]
+        summary["elo"] = bool(get_elo_table())
+        summary["predictions"] = predict_todays_games()
+        summary["evaluation"] = evaluate_pending(100)
+    except Exception as exc:
+        logger.exception("Erreur tâche automatique")
+        summary["error"] = str(exc)
+    finally:
+        JOB_STATE.update(running=False, last_end=datetime.now(timezone.utc).isoformat(), last_summary=summary)
+        JOB_LOCK.release()
+    return True
+
 # ---------------------- FASTAPI -----------------------------
 
 @asynccontextmanager
@@ -986,7 +1194,7 @@ def serve_home():
 
 @app.get("/api/health")
 def health():
-    return {"status": "online", "version": VERSION, "database": DB_FILE,
+    return {"status": "online", "version": VERSION, "database": "postgresql" if USE_PG else DB_FILE,
             "time": datetime.now(timezone.utc).isoformat()}
 
 @app.get("/api/matches/nhl")
@@ -1048,6 +1256,30 @@ def get_sync_history():
     with db_connection() as db:
         rows = db.execute("SELECT * FROM sync_history ORDER BY id DESC LIMIT 30").fetchall()
     return {"synchronizations": [dict(row) for row in rows]}
+
+@app.get("/api/cron")
+def api_cron(key: Optional[str] = None):
+    """À appeler par le cron (toutes les 10 min) : répond tout de suite, la tâche tourne en arrière-plan."""
+    if CRON_SECRET and not (key and secrets.compare_digest(key, CRON_SECRET)):
+        raise HTTPException(status_code=403, detail="Clé invalide.")
+    if JOB_LOCK.locked():
+        return {"status": "already_running", **JOB_STATE}
+    threading.Thread(target=run_cron_job, daemon=True).start()
+    return {"status": "started"}
+
+@app.get("/api/cron/status")
+def api_cron_status():
+    return JOB_STATE
+
+@app.get("/api/elo")
+def api_elo():
+    """Classement Elo des équipes (calculé sur la saison en cours + saison précédente)."""
+    table = get_elo_table()
+    if not table:
+        raise HTTPException(status_code=503, detail="Classement Elo indisponible.")
+    ranking = sorted(table["ratings"].items(), key=lambda kv: kv[1], reverse=True)
+    return {"games_used": table["games_used"],
+            "ranking": [{"team": t, "elo": r} for t, r in ranking]}
 
 @app.get("/api/evaluate")
 def api_evaluate(limit: int = 50):
