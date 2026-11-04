@@ -6,6 +6,7 @@ import sqlite3
 import asyncio
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from contextlib import asynccontextmanager
@@ -19,15 +20,19 @@ from pydantic import BaseModel, Field
 from scipy.stats import poisson
 
 # ============================================================
-# NHL GOALSCORER ANALYTICS - VERSION 38.1
+# NHL GOALSCORER ANALYTICS - VERSION 39.2
 # Compatible avec Render : main:app
 # ============================================================
 
-VERSION = "39.00"
+VERSION = "39.20"
 DB_FILE = os.getenv("DB_FILE", "nhl_history.db")
 PORT = int(os.getenv("PORT", "8000"))
 CACHE_TTL = 300
 TIMEOUT = 15
+MAX_WORKERS = 8
+LEAGUE_SH_PCT = 0.105   # % de réussite moyen des tirs (régression vers la moyenne)
+SH_PRIOR_SHOTS = 60      # poids de la moyenne ligue, en tirs
+TOI_FACTOR_RANGE = (0.90, 1.10)
 PARIS_TZ = ZoneInfo("Europe/Paris")
 API = "https://api-web.nhle.com/v1"
 
@@ -36,7 +41,7 @@ logger = logging.getLogger("NHL-IA-39")
 
 SESSION = requests.Session()
 SESSION.headers.update({
-    "User-Agent": "Mozilla/5.0 NHL-GoalScorer-Analytics/39.0",
+    "User-Agent": "Mozilla/5.0 NHL-GoalScorer-Analytics/39.1",
     "Accept": "application/json"
 })
 
@@ -97,10 +102,21 @@ def get_nhl_abbr(team_str: str) -> str:
         )
     if name in TEAM_MAP_NHL:
         return TEAM_MAP_NHL[name]
-    # Match partiel contrôlé, en privilégiant l'alias le plus long.
-    for key in sorted(TEAM_MAP_NHL, key=len, reverse=True):
-        if len(key) >= 4 and (key in name or name in key):
-            return TEAM_MAP_NHL[key]
+    # Correspondance partielle uniquement si elle désigne UNE seule équipe.
+    # - la saisie est un fragment d'un alias connu (ex. "CANADI")
+    # - ou la saisie contient un alias connu (ex. "THE BOSTON BRUINS")
+    candidates = set()
+    if len(name) >= 4:
+        for key, abbr in TEAM_MAP_NHL.items():
+            if name in key or (len(key) >= 4 and key in name):
+                candidates.add(abbr)
+    if len(candidates) == 1:
+        return next(iter(candidates))
+    if len(candidates) > 1:
+        raise ValueError(
+            f"Nom d'équipe ambigu : « {team_str} » (possibles : {', '.join(sorted(candidates))}). "
+            "Utilise le nom complet ou le code NHL."
+        )
     raise ValueError(f"Équipe NHL inconnue : {team_str}")
 
 def cached_get(key, fetcher, ttl=CACHE_TTL):
@@ -219,6 +235,21 @@ def fetch_team_roster(team_str):
             })
     return players
 
+def _toi_to_seconds(value):
+    """Convertit 'MM:SS' (ou 'HH:MM:SS') ou un nombre en secondes. None si invalide."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value) if value > 0 else None
+    try:
+        parts = [int(x) for x in str(value).split(":")]
+    except ValueError:
+        return None
+    seconds = 0
+    for part in parts:
+        seconds = seconds * 60 + part
+    return float(seconds) if seconds > 0 else None
+
 def fetch_player_recent_form(player_id):
     if not player_id:
         return None
@@ -232,12 +263,23 @@ def fetch_player_recent_form(player_id):
     goals = sum(int(g.get("goals", 0) or 0) for g in games)
     assists = sum(int(g.get("assists", 0) or 0) for g in games)
     shots = sum(int(g.get("shots", 0) or 0) for g in games)
+    toi_values = [t for t in (_toi_to_seconds(g.get("toi")) for g in games) if t]
     return {
         "games": count, "goals": goals, "assists": assists, "shots": shots,
+        "avg_toi_seconds": round(sum(toi_values) / len(toi_values), 1) if toi_values else None,
         "goals_per_game": round(goals / count, 3),
         "assists_per_game": round(assists / count, 3),
         "shots_per_game": round(shots / count, 2)
     }
+
+def prefetch_recent_forms(player_ids):
+    """Récupère en parallèle la forme récente (résultats mis en cache), renvoie {id: forme}."""
+    ids = [pid for pid in dict.fromkeys(player_ids) if pid]
+    if not ids:
+        return {}
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        forms = list(pool.map(fetch_player_recent_form, ids))
+    return dict(zip(ids, forms))
 
 def goalie_analysis(stats):
     if not stats:
@@ -266,23 +308,46 @@ def clamp(value, minimum, maximum):
 def probability_to_odds(probability):
     return round(1 / probability, 2) if probability and probability > 0 else None
 
+def regressed_shooting_pct(goals, shots):
+    """% de réussite ramené vers la moyenne ligue : limite l'effet de la chance sur petit échantillon."""
+    return (goals + SH_PRIOR_SHOTS * LEAGUE_SH_PCT) / (shots + SH_PRIOR_SHOTS)
+
+def toi_factor(recent_form, season_toi_seconds):
+    """Compare le temps de glace récent à celui de la saison (changement de rôle, ligne, blessures)."""
+    recent_toi = recent_form.get("avg_toi_seconds") if recent_form else None
+    season_toi = _toi_to_seconds(season_toi_seconds)
+    if not recent_toi or not season_toi:
+        return 1.0
+    return clamp(recent_toi / season_toi, *TOI_FACTOR_RANGE)
+
 def calculate_player_probability(goals, assists, games, recent_form=None,
-                                 opponent_factor=1.0, team_factor=1.0, metric="goal"):
+                                 opponent_factor=1.0, team_factor=1.0, metric="goal",
+                                 shots=None, season_toi_seconds=None):
     games = max(1, int(games or 1))
     season_total = goals if metric == "goal" else assists
     season_rate = season_total / games
     recent_rate = None
     if recent_form:
         recent_rate = recent_form.get("goals_per_game" if metric == "goal" else "assists_per_game")
+
+    # Buts : modèle tirs x % de réussite régressé (plus stable que les buts bruts).
+    if metric == "goal" and shots and shots > 0:
+        sh_pct = regressed_shooting_pct(goals, shots)
+        season_rate = (shots / games) * sh_pct
+        if recent_form and recent_form.get("shots_per_game") is not None:
+            recent_rate = recent_form["shots_per_game"] * sh_pct
+
     player_rate = 0.70 * season_rate + 0.30 * recent_rate if recent_rate is not None else season_rate
-    expected_rate = max(0.0, player_rate * opponent_factor * team_factor)
+    ice_factor = toi_factor(recent_form, season_toi_seconds)
+    expected_rate = max(0.0, player_rate * opponent_factor * team_factor * ice_factor)
     probability = clamp(1 - math.exp(-expected_rate), 0.001, 0.95)
     return {
         "probability": round(probability * 100, 1),
         "fair_odds": probability_to_odds(probability),
         "expected_rate": round(expected_rate, 3),
         "season_rate": round(season_rate, 3),
-        "recent_rate": round(recent_rate, 3) if recent_rate is not None else None
+        "recent_rate": round(recent_rate, 3) if recent_rate is not None else None,
+        "toi_factor": round(ice_factor, 3)
     }
 
 def _player_name(p):
@@ -317,19 +382,34 @@ def calculate_security_profile(probability_pct, games, recent_form, metric):
             "confidence_label": label}
 
 
-def goalie_adjustment(opponent_stats):
-    """Ajustement modéré à partir des moyennes de gardiens disponibles."""
+def opponent_defense_factor(opponent_stats):
+    """Facteur de faiblesse défensive de l'adversaire.
+
+    Basé sur les buts encaissés (GAA moyen des gardiens adverses) : plus l'adversaire
+    encaisse, plus le facteur est > 1. Remplace l'ancien calcul qui utilisait à tort
+    les buts MARQUÉS par l'adversaire.
+    """
     if not opponent_stats:
         return 1.0
-    factors = []
     gaa = opponent_stats.get("average_goalie_gaa")
+    if gaa is None or float(gaa) <= 0:
+        return 1.0
+    return clamp(float(gaa) / 3.0, 0.8, 1.2)
+
+
+def goalie_adjustment(opponent_stats):
+    """Ajustement modéré basé sur le % d'arrêts des gardiens adverses.
+
+    Le GAA est déjà pris en compte par opponent_defense_factor : on n'utilise ici
+    que le % d'arrêts pour éviter un double comptage.
+    """
+    if not opponent_stats:
+        return 1.0
     save_pct = opponent_stats.get("average_goalie_save_pct")
-    if gaa is not None:
-        factors.append(clamp(1.0 + (float(gaa) - 3.0) * 0.06, 0.90, 1.10))
-    if save_pct is not None:
-        # API NHL renvoie généralement un pourcentage sous forme décimale (ex. 0.910).
-        factors.append(clamp(1.0 + (0.910 - float(save_pct)) * 1.5, 0.94, 1.06))
-    return sum(factors) / len(factors) if factors else 1.0
+    if save_pct is None:
+        return 1.0
+    # L'API NHL renvoie généralement un pourcentage décimal (ex. 0.910).
+    return clamp(1.0 + (0.910 - float(save_pct)) * 1.5, 0.94, 1.06)
 
 
 def fetch_nhl_players(team_str, metric="goal", opponent_factor=1.0,
@@ -339,22 +419,32 @@ def fetch_nhl_players(team_str, metric="goal", opponent_factor=1.0,
         return []
     output = []
     goalie_factor = goalie_adjustment(opponent_stats)
+
+    # Sélection des joueurs éligibles, puis récupération parallèle de la forme récente.
+    eligible = []
     for p in stats["skaters"]:
         pos = p.get("positionCode", "")
         if metric == "goal" and pos not in ("L", "R", "C", "F"):
             continue
         if metric == "assist" and pos not in ("L", "R", "C", "F", "D"):
             continue
+        if int(p.get("gamesPlayed", 0) or 0) <= 0:
+            continue
+        eligible.append(p)
+    forms = prefetch_recent_forms([p.get("playerId") or p.get("id") for p in eligible])
+
+    for p in eligible:
+        pos = p.get("positionCode", "")
         goals = int(p.get("goals", 0) or 0)
         assists = int(p.get("assists", 0) or 0)
         games = int(p.get("gamesPlayed", 0) or 0)
-        if games <= 0:
-            continue
         player_id = p.get("playerId") or p.get("id")
-        recent = fetch_player_recent_form(player_id)
+        recent = forms.get(player_id)
         pred = calculate_player_probability(
             goals, assists, games, recent,
-            opponent_factor * goalie_factor, team_factor, metric
+            opponent_factor * goalie_factor, team_factor, metric,
+            shots=int(p.get("shots", 0) or 0),
+            season_toi_seconds=p.get("avgTimeOnIcePerGame")
         )
         total = goals if metric == "goal" else assists
         label = "buts" if metric == "goal" else "passes décisives"
@@ -367,7 +457,7 @@ def fetch_nhl_players(team_str, metric="goal", opponent_factor=1.0,
             "momentum": "🔥 Forme récente positive" if recent_total > 0 else "📊 Statistiques de saison",
             "prob": f'{pred["probability"]}%', "probability_value": pred["probability"],
             "odds": pred["fair_odds"], "fair_odds": pred["fair_odds"],
-            "expected_rate": pred["expected_rate"], **security
+            "expected_rate": pred["expected_rate"], "toi_factor": pred["toi_factor"], **security
         })
     output.sort(key=lambda x: x["probability_value"], reverse=True)
     return output[:10]
@@ -455,10 +545,13 @@ def build_match_prediction(req):
     home_xg = calculate_team_expectation(home_stats, away_stats, True)
     away_xg = calculate_team_expectation(away_stats, home_stats, False)
     model = calculate_match_model(home_xg, away_xg)
-    home_factor = clamp(3.0 / away_stats["goals_per_game"], 0.8, 1.2) if away_stats and away_stats["goals_per_game"] > 0 else 1.0
-    away_factor = clamp(3.0 / home_stats["goals_per_game"], 0.8, 1.2) if home_stats and home_stats["goals_per_game"] > 0 else 1.0
 
-    # Le gardien adverse est intégré avec un poids limité pour éviter les corrections excessives.
+    # Facteur adverse : un attaquant domicile profite d'une défense VISITEUSE faible
+    # (buts encaissés élevés), et inversement.
+    home_factor = opponent_defense_factor(away_stats)
+    away_factor = opponent_defense_factor(home_stats)
+
+    # Le % d'arrêts adverse est intégré avec un poids limité (voir goalie_adjustment).
     home_scorers = fetch_nhl_players(home_abbr, "goal", home_factor, 1.04, away_stats)
     away_scorers = fetch_nhl_players(away_abbr, "goal", away_factor, 0.96, home_stats)
     home_playmakers = fetch_nhl_players(home_abbr, "assist", home_factor, 1.04, away_stats)
@@ -495,9 +588,9 @@ def build_match_prediction(req):
             "away": {"goals_per_game": away_stats["goals_per_game"], "games": away_stats["games"]} if away_stats else None
         },
         "goalie_adjustment": {
-            "home_attack_factor": round(goalie_adjustment(away_stats), 3),
-            "away_attack_factor": round(goalie_adjustment(home_stats), 3),
-            "note": "Ajustement modéré basé sur les statistiques de gardiens disponibles."
+            "home_attack_factor": round(home_factor * goalie_adjustment(away_stats), 3),
+            "away_attack_factor": round(away_factor * goalie_adjustment(home_stats), 3),
+            "note": "Facteur défensif (GAA adverse) combiné à un ajustement modéré du % d'arrêts."
         },
         "value_analysis": {
             "home_win": calculate_value(model["home_win_pct_value"], req.home_market_odds),
