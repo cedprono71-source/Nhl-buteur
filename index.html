@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#f1f5f9">
-<title>NHL GoalScorer Analytics 38.1</title>
+<title>NHL GoalScorer Analytics 39.0</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
   button:focus-visible,input:focus-visible { outline:3px solid #f87171; outline-offset:2px; }
@@ -12,9 +12,10 @@
 </style>
 </head>
 <body class="bg-slate-100 text-slate-900 min-h-screen font-sans">
+
 <header class="bg-white border-b border-slate-200 py-4 px-4 sm:px-6 sticky top-0 z-40 shadow-sm">
   <div class="max-w-4xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-3">
-    <h1 class="text-lg sm:text-xl font-extrabold tracking-wide text-red-600">🏒 <span class="text-slate-900">NHL GoalScorer Analytics</span> <span class="text-xs text-slate-400">38.1</span></h1>
+    <h1 class="text-lg sm:text-xl font-extrabold tracking-wide text-red-600">🏒 <span class="text-slate-900">NHL GoalScorer Analytics</span> <span class="text-xs text-slate-400">39.0 • MODE SÉCURITÉ</span></h1>
     <div class="flex items-center gap-2">
       <label for="date-picker" class="text-xs font-bold text-slate-500 uppercase">Date :</label>
       <input type="date" id="date-picker" class="bg-slate-50 px-3 py-2 rounded-lg border border-slate-300 text-sm">
@@ -39,6 +40,7 @@
     </div>
     <button id="close-modal" aria-label="Fermer" class="text-slate-400 hover:text-slate-800 text-3xl leading-none">&times;</button>
   </div>
+
   <div class="p-3 sm:p-4 flex-1 overflow-y-auto modal-scroll space-y-4">
     <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 sm:p-4 space-y-3">
       <div class="text-xs font-bold text-slate-500 uppercase">Pronostics & buts attendus (xG)</div>
@@ -58,10 +60,13 @@
       <button id="tab-type-goals" class="flex-1 py-3 text-sm font-bold rounded-lg bg-white shadow-sm">🎯 Buteurs</button>
       <button id="tab-type-assists" class="flex-1 py-3 text-sm font-bold rounded-lg text-slate-600">🤝 Passeurs</button>
     </div>
+
     <div class="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
       <button id="btn-home" class="flex-1 py-3 text-sm font-bold rounded-lg bg-red-600 text-white">Domicile</button>
       <button id="btn-away" class="flex-1 py-3 text-sm font-bold rounded-lg text-slate-600">Extérieur</button>
     </div>
+
+    <div id="safe-top5" class="space-y-2"></div>
     <div id="players-container" class="space-y-3" aria-live="polite"></div>
     <div id="extra-data" class="space-y-3"></div>
   </div>
@@ -70,53 +75,75 @@
 
 <script>
 "use strict";
+
 let currentMatchData = null;
 let activeModalTab = "home";
 let activeStatType = "goals";
 let selectedMatch = null;
+
 const $ = id => document.getElementById(id);
 const datePicker = $("date-picker");
+
 const today = new Date();
 const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().slice(0,10);
 datePicker.value = localDate;
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, c => ({
-    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+    "&":"&amp;",
+    "<":"&lt;",
+    ">":"&gt;",
+    '"':"&quot;",
+    "'":"&#39;"
   }[c]));
 }
+
 function setStatus(message, bad=false) {
   $("api-status").textContent = message;
   $("api-status").className = "mb-4 text-xs text-center " + (bad ? "text-red-600 font-semibold" : "text-slate-500");
 }
+
 function displayError(message) {
+  $("safe-top5").innerHTML = "";
   $("players-container").innerHTML = `
     <div class="rounded-xl border border-red-200 bg-red-50 p-5 text-center">
       <div class="text-3xl mb-2">⚠️</div>
       <div class="font-bold text-red-700">${escapeHtml(message)}</div>
       <button id="retry-prediction" class="mt-4 rounded-lg bg-red-600 px-5 py-3 text-white font-bold">Réessayer</button>
     </div>`;
+
   $("retry-prediction").addEventListener("click", () => {
-    if (selectedMatch) fetchPrediction(selectedMatch.home_abbr, selectedMatch.away_abbr);
+    if (selectedMatch) {
+      fetchPrediction(selectedMatch.home_abbr, selectedMatch.away_abbr);
+    }
   });
 }
+
 async function loadNhlMatches(date) {
   $("loading").classList.remove("hidden");
   $("matches-container").innerHTML = "";
   $("no-matches").classList.add("hidden");
   setStatus("Récupération du calendrier NHL…");
+
   try {
     const response = await fetch(`/api/matches/nhl?date=${encodeURIComponent(date)}`);
     const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || `Erreur HTTP ${response.status}`);
+
+    if (!response.ok) {
+      throw new Error(data.detail || `Erreur HTTP ${response.status}`);
+    }
+
     $("loading").classList.add("hidden");
+
     if (!Array.isArray(data.matches) || data.matches.length === 0) {
       $("no-matches").textContent = "Aucun match NHL trouvé pour cette date.";
       $("no-matches").classList.remove("hidden");
     } else {
       data.matches.forEach(renderMatchCard);
     }
+
     setStatus(`${data.matches.length} match(s) trouvé(s) • Fuseau Europe/Paris`);
+
   } catch (err) {
     $("loading").classList.add("hidden");
     $("no-matches").textContent = `Impossible de charger le calendrier : ${err.message}`;
@@ -124,158 +151,312 @@ async function loadNhlMatches(date) {
     setStatus("Erreur de connexion à l'API", true);
   }
 }
+
 function renderMatchCard(match) {
   const card = document.createElement("button");
   card.type = "button";
   card.className = "w-full bg-white border border-slate-200 rounded-2xl p-3 sm:p-5 flex items-center justify-between gap-2 shadow-sm hover:shadow-md hover:border-red-300 transition text-left";
+
   const home = escapeHtml(match.home_team);
   const away = escapeHtml(match.away_team);
+
   const homeLogo = escapeHtml(match.home_logo || `https://assets.nhle.com/logos/nhl/svg/${match.home_abbr}_light.svg`);
   const awayLogo = escapeHtml(match.away_logo || `https://assets.nhle.com/logos/nhl/svg/${match.away_abbr}_light.svg`);
+
   card.innerHTML = `
     <div class="flex items-center gap-2 sm:gap-3 flex-1 justify-end min-w-0">
       <span class="font-bold text-slate-800 text-right text-xs sm:text-base">${home}</span>
       <img src="${homeLogo}" alt="" class="w-9 h-9 sm:w-12 sm:h-12 object-contain" onerror="this.style.visibility='hidden'">
     </div>
-    <div class="px-1 sm:px-3 text-center shrink-0"><span class="text-[10px] sm:text-xs bg-slate-100 text-slate-700 px-2 py-1.5 rounded-full font-bold border whitespace-nowrap">${escapeHtml(match.game_state || "NHL")}</span><div class="text-[9px] text-slate-400 mt-1">ANALYSER</div></div>
+
+    <div class="px-1 sm:px-3 text-center shrink-0">
+      <span class="text-[10px] sm:text-xs bg-slate-100 text-slate-700 px-2 py-1.5 rounded-full font-bold border whitespace-nowrap">${escapeHtml(match.game_state || "NHL")}</span>
+      <div class="text-[9px] text-slate-400 mt-1">ANALYSER</div>
+    </div>
+
     <div class="flex items-center gap-2 sm:gap-3 flex-1 justify-start min-w-0">
       <img src="${awayLogo}" alt="" class="w-9 h-9 sm:w-12 sm:h-12 object-contain" onerror="this.style.visibility='hidden'">
       <span class="font-bold text-slate-800 text-left text-xs sm:text-base">${away}</span>
     </div>`;
-  // IMPORTANT : transmettre les codes NHL, jamais le libellé des boutons Domicile/Extérieur.
+
   card.addEventListener("click", () => {
     if (!match.home_abbr || !match.away_abbr) {
       setStatus("Codes des équipes absents du calendrier.", true);
       return;
     }
+
     selectedMatch = match;
     fetchPrediction(match.home_abbr, match.away_abbr);
   });
+
   $("matches-container").appendChild(card);
 }
+
 function openModal() {
   $("modal").classList.remove("hidden");
   $("modal").classList.add("flex");
   document.body.classList.add("overflow-hidden");
 }
+
 function closeModal() {
   $("modal").classList.add("hidden");
   $("modal").classList.remove("flex");
   document.body.classList.remove("overflow-hidden");
 }
+
 function setActiveButton(id, active) {
   const el = $(id);
+
   el.className = active
     ? "flex-1 py-3 text-sm font-bold rounded-lg bg-red-600 text-white shadow-sm"
     : "flex-1 py-3 text-sm font-bold rounded-lg text-slate-600 hover:text-slate-900";
 }
+
 async function fetchPrediction(homeTeam, awayTeam) {
-  // Garde-fou côté interface contre la régression « Équipe inconnue : Domicile ».
   if (!homeTeam || !awayTeam || ["DOMICILE","EXTERIEUR","HOME","AWAY"].includes(String(homeTeam).toUpperCase())) {
     openModal();
     displayError("Équipe non reconnue. Sélectionne un vrai match dans le calendrier.");
     return;
   }
+
   activeModalTab = "home";
   activeStatType = "goals";
   currentMatchData = null;
+
   $("modal-teams").textContent = `${homeTeam} vs ${awayTeam}`;
-  ["pred-home-win","pred-draw","pred-away-win","pred-xg","pred-over55","pred-score"].forEach(id => $(id).textContent = "…");
+
+  ["pred-home-win","pred-draw","pred-away-win","pred-xg","pred-over55","pred-score"].forEach(id => {
+    $(id).textContent = "…";
+  });
+
   $("players-container").innerHTML = '<div class="text-center py-10 text-slate-500">Calcul des probabilités et récupération des statistiques NHL…</div>';
   $("extra-data").innerHTML = "";
-  setActiveButton("btn-home", true); setActiveButton("btn-away", false);
+  $("safe-top5").innerHTML = "";
+
+  setActiveButton("btn-home", true);
+  setActiveButton("btn-away", false);
   openModal();
+
   try {
     const response = await fetch("/predict/goalscorers", {
       method: "POST",
       headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({league:"NHL", home_team:homeTeam, away_team:awayTeam})
+      body: JSON.stringify({
+        league:"NHL",
+        home_team:homeTeam,
+        away_team:awayTeam
+      })
     });
+
     const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || `Erreur HTTP ${response.status}`);
+
+    if (!response.ok) {
+      throw new Error(data.detail || `Erreur HTTP ${response.status}`);
+    }
+
     currentMatchData = data;
     const p = data.match_prediction || {};
+
     $("pred-home-win").textContent = p.home_win_pct ?? "—";
     $("pred-draw").textContent = p.draw_or_ot_pct ?? "—";
     $("pred-away-win").textContent = p.away_win_pct ?? "—";
     $("pred-xg").textContent = `${p.expected_goals_home ?? "—"} - ${p.expected_goals_away ?? "—"}`;
     $("pred-over55").textContent = p.over_5_5_goals_prob ?? "—";
-    $("pred-score").textContent = p.most_likely_score ? `${p.most_likely_score.home} - ${p.most_likely_score.away}` : "—";
+    $("pred-score").textContent = p.most_likely_score
+      ? `${p.most_likely_score.home} - ${p.most_likely_score.away}`
+      : "—";
+
     renderPlayers();
     renderExtraData();
+
   } catch (err) {
     displayError(err.message || "Erreur lors de la récupération des données.");
   }
 }
+
 function switchStatType(type) {
   activeStatType = type;
-  $("tab-type-goals").className = type === "goals" ? "flex-1 py-3 text-sm font-bold rounded-lg bg-white shadow-sm" : "flex-1 py-3 text-sm font-bold rounded-lg text-slate-600";
-  $("tab-type-assists").className = type === "assists" ? "flex-1 py-3 text-sm font-bold rounded-lg bg-white shadow-sm" : "flex-1 py-3 text-sm font-bold rounded-lg text-slate-600";
+
+  $("tab-type-goals").className = type === "goals"
+    ? "flex-1 py-3 text-sm font-bold rounded-lg bg-white shadow-sm"
+    : "flex-1 py-3 text-sm font-bold rounded-lg text-slate-600";
+
+  $("tab-type-assists").className = type === "assists"
+    ? "flex-1 py-3 text-sm font-bold rounded-lg bg-white shadow-sm"
+    : "flex-1 py-3 text-sm font-bold rounded-lg text-slate-600";
+
   renderPlayers();
 }
+
 function switchModalTab(tab) {
   activeModalTab = tab;
+
   setActiveButton("btn-home", tab === "home");
   setActiveButton("btn-away", tab === "away");
+
   renderPlayers();
   renderExtraData();
 }
+
 function renderPlayers() {
   if (!currentMatchData) return;
+
   const key = activeStatType === "goals"
     ? (activeModalTab === "home" ? "top_goalscorers_home" : "top_goalscorers_away")
     : (activeModalTab === "home" ? "top_playmakers_home" : "top_playmakers_away");
+
+  const safeKey = activeStatType === "goals"
+    ? (activeModalTab === "home" ? "safe_top5_goals_home" : "safe_top5_goals_away")
+    : (activeModalTab === "home" ? "safe_top5_assists_home" : "safe_top5_assists_away");
+
   const players = currentMatchData[key] || [];
+  const safePlayers = currentMatchData[safeKey] || [];
+
   const container = $("players-container");
+  const safeContainer = $("safe-top5");
+
+  const badgeClass = level =>
+    level === "high" ? "bg-green-100 text-green-800" :
+    level === "medium" ? "bg-amber-100 text-amber-800" :
+    "bg-red-100 text-red-800";
+
+  safeContainer.innerHTML = safePlayers.length ? `
+    <section class="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <div class="font-extrabold text-emerald-900">🛡️ TOP 5 — MODE SÉCURITÉ</div>
+        <span class="text-[10px] font-bold text-emerald-800">39.0</span>
+      </div>
+
+      <div class="text-[11px] text-emerald-800 mb-2">Tri selon probabilité estimée, régularité et forme récente.</div>
+
+      ${safePlayers.map((p,i) => `
+        <div class="flex items-center justify-between gap-2 py-2 border-t border-emerald-100">
+          <div class="min-w-0">
+            <div class="font-bold text-sm text-slate-900">${i+1}. ${escapeHtml(p.name)}</div>
+            <div class="text-[11px] text-slate-600">${escapeHtml(p.stats)} • Score sécurité ${p.security_score ?? "—"}/100</div>
+          </div>
+          <div class="text-right shrink-0">
+            <div class="font-extrabold text-red-700">${escapeHtml(p.prob)}</div>
+            <span class="inline-block rounded-full px-2 py-1 text-[10px] font-bold ${badgeClass(p.confidence)}">${escapeHtml(p.confidence_label || "À surveiller")}</span>
+          </div>
+        </div>
+      `).join("")}
+    </section>` : "";
+
   if (!players.length) {
     container.innerHTML = '<div class="text-center py-8 text-slate-500 bg-slate-50 rounded-xl">Aucune statistique joueur disponible pour cette équipe pour le moment.</div>';
     return;
   }
-  container.innerHTML = players.map(p => `
-    <article class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex items-center justify-between gap-3">
-      <div class="min-w-0">
-        <div class="font-bold text-sm text-slate-900">${escapeHtml(p.name)} <span class="text-xs bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded">${escapeHtml(p.pos)}</span></div>
-        <div class="text-xs text-slate-500 mt-1">${escapeHtml(p.stats)} • <span class="font-semibold text-slate-700">${escapeHtml(p.momentum)}</span></div>
-        ${p.recent_form ? `<div class="text-[11px] text-slate-500 mt-1">10 derniers matchs : ${p.recent_form.goals} buts, ${p.recent_form.assists} passes, ${p.recent_form.shots} tirs</div>` : ""}
-      </div>
-      <div class="text-right shrink-0">
-        <div class="text-red-600 font-extrabold text-base">${escapeHtml(p.prob)}</div>
-        <div class="text-xs text-slate-500">Cote juste ${p.odds ? escapeHtml(p.odds) : "—"}</div>
-      </div>
-    </article>`).join("");
+
+  container.innerHTML =
+    '<div class="text-xs font-bold uppercase text-slate-500 pt-1">Tous les profils classés par probabilité</div>' +
+    players.map(p => `
+      <article class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <div class="font-bold text-sm text-slate-900">
+            ${escapeHtml(p.name)}
+            <span class="text-xs bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded">${escapeHtml(p.pos)}</span>
+          </div>
+
+          <div class="text-xs text-slate-500 mt-1">
+            ${escapeHtml(p.stats)} • <span class="font-semibold text-slate-700">${escapeHtml(p.momentum)}</span>
+          </div>
+
+          ${p.recent_form ? `
+            <div class="text-[11px] text-slate-500 mt-1">
+              10 derniers matchs : ${p.recent_form.goals} buts, ${p.recent_form.assists} passes, ${p.recent_form.shots} tirs
+            </div>` : ""}
+
+          <div class="mt-1">
+            <span class="inline-block rounded-full px-2 py-1 text-[10px] font-bold ${badgeClass(p.confidence)}">${escapeHtml(p.confidence_label || "Profil non évalué")}</span>
+            <span class="text-[10px] text-slate-500">Score ${p.security_score ?? "—"}/100</span>
+          </div>
+        </div>
+
+        <div class="text-right shrink-0">
+          <div class="text-red-600 font-extrabold text-base">${escapeHtml(p.prob)}</div>
+          <div class="text-xs text-slate-500">Cote juste ${p.odds ? escapeHtml(p.odds) : "—"}</div>
+        </div>
+      </article>
+    `).join("");
 }
+
 function renderExtraData() {
   if (!currentMatchData) return;
-  const goalies = activeModalTab === "home" ? currentMatchData.goalies_home : currentMatchData.goalies_away;
-  const roster = activeModalTab === "home" ? currentMatchData.roster_home : currentMatchData.roster_away;
+
+  const goalies = activeModalTab === "home"
+    ? currentMatchData.goalies_home
+    : currentMatchData.goalies_away;
+
+  const roster = activeModalTab === "home"
+    ? currentMatchData.roster_home
+    : currentMatchData.roster_away;
+
   const teamStats = currentMatchData.team_stats?.[activeModalTab];
   const values = currentMatchData.value_analysis || {};
+
   $("extra-data").innerHTML = `
     <div class="grid sm:grid-cols-2 gap-3">
       <div class="bg-white border rounded-xl p-3">
         <div class="font-bold text-sm mb-2">🥅 Gardiens de l'équipe</div>
-        ${(goalies || []).length ? goalies.map(g => `<div class="text-xs py-1 border-b last:border-0">${escapeHtml(g.name)} — % arrêts : ${g.save_pct ?? "—"} • GAA : ${g.gaa ?? "—"}</div>`).join("") : '<div class="text-xs text-slate-500">Données gardiens indisponibles.</div>'}
+        ${(goalies || []).length
+          ? goalies.map(g => `
+              <div class="text-xs py-1 border-b last:border-0">
+                ${escapeHtml(g.name)} — % arrêts : ${g.save_pct ?? "—"} • GAA : ${g.gaa ?? "—"}
+              </div>
+            `).join("")
+          : '<div class="text-xs text-slate-500">Données gardiens indisponibles.</div>'}
       </div>
+
       <div class="bg-white border rounded-xl p-3">
         <div class="font-bold text-sm mb-2">📊 Statistiques équipe</div>
-        <div class="text-xs text-slate-600">${teamStats ? `${teamStats.goals_per_game} buts/match sur ${teamStats.games} matchs` : "Statistiques indisponibles."}</div>
+        <div class="text-xs text-slate-600">
+          ${teamStats ? `${teamStats.goals_per_game} buts/match sur ${teamStats.games} matchs` : "Statistiques indisponibles."}
+        </div>
       </div>
     </div>
+
     <div class="bg-white border rounded-xl p-3">
       <div class="font-bold text-sm mb-2">💎 Analyse de value</div>
-      ${[["Victoire domicile",values.home_win],["Victoire extérieur",values.away_win],["Over 5.5",values.over_5_5]].map(([label,v]) => `<div class="flex justify-between gap-2 text-xs py-1 border-b last:border-0"><span>${label}</span><span class="${v?.value_detected ? "text-green-700 font-bold" : "text-slate-500"}">${v?.value_detected ? "Value potentielle" : (v?.message || "Non calculée")}${v?.value_percent != null ? ` (${v.value_percent}%)` : ""}</span></div>`).join("")}
+      ${[
+        ["Victoire domicile",values.home_win],
+        ["Victoire extérieur",values.away_win],
+        ["Over 5.5",values.over_5_5]
+      ].map(([label,v]) => `
+        <div class="flex justify-between gap-2 text-xs py-1 border-b last:border-0">
+          <span>${label}</span>
+          <span class="${v?.value_detected ? "text-green-700 font-bold" : "text-slate-500"}">
+            ${v?.value_detected ? "Value potentielle" : (v?.message || "Non calculée")}
+            ${v?.value_percent != null ? ` (${v.value_percent}%)` : ""}
+          </span>
+        </div>
+      `).join("")}
     </div>
-    <div class="text-[11px] text-slate-400 text-center">Version ${escapeHtml(currentMatchData.version || "38.1")} • Les probabilités sont des estimations statistiques, pas des garanties.</div>`;
+
+    <div class="text-[11px] text-slate-400 text-center">
+      Version ${escapeHtml(currentMatchData.version || "39.0")} • Le score sécurité mesure la régularité des données, jamais une garantie de résultat.
+    </div>`;
 }
+
 $("close-modal").addEventListener("click", closeModal);
-$("modal").addEventListener("click", e => { if (e.target === $("modal")) closeModal(); });
+
+$("modal").addEventListener("click", e => {
+  if (e.target === $("modal")) closeModal();
+});
+
 $("tab-type-goals").addEventListener("click", () => switchStatType("goals"));
 $("tab-type-assists").addEventListener("click", () => switchStatType("assists"));
 $("btn-home").addEventListener("click", () => switchModalTab("home"));
 $("btn-away").addEventListener("click", () => switchModalTab("away"));
+
 $("refresh-btn").addEventListener("click", () => loadNhlMatches(datePicker.value));
+
 datePicker.addEventListener("change", e => loadNhlMatches(e.target.value));
-document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") closeModal();
+});
+
 loadNhlMatches(datePicker.value);
 </script>
 </body>
