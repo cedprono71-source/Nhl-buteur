@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#f1f5f9">
-<title>NHL GoalScorer Analytics 39.7</title>
+<title>NHL GoalScorer Analytics 39.72</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
   button:focus-visible,input:focus-visible { outline:3px solid #f87171; outline-offset:2px; }
@@ -168,32 +168,49 @@ async function loadNhlMatches(date) {
   }
 }
 
+const TEAM_NAMES = {
+  ANA:"Anaheim Ducks", BOS:"Boston Bruins", BUF:"Buffalo Sabres", CGY:"Calgary Flames",
+  CAR:"Carolina Hurricanes", CHI:"Chicago Blackhawks", COL:"Colorado Avalanche", CBJ:"Columbus Blue Jackets",
+  DAL:"Dallas Stars", DET:"Detroit Red Wings", EDM:"Edmonton Oilers", FLA:"Florida Panthers",
+  LAK:"Los Angeles Kings", MIN:"Minnesota Wild", MTL:"Montréal Canadiens", NSH:"Nashville Predators",
+  NJD:"New Jersey Devils", NYI:"New York Islanders", NYR:"New York Rangers", OTT:"Ottawa Senators",
+  PHI:"Philadelphia Flyers", PIT:"Pittsburgh Penguins", SJS:"San Jose Sharks", SEA:"Seattle Kraken",
+  STL:"St. Louis Blues", TBL:"Tampa Bay Lightning", TOR:"Toronto Maple Leafs", UTA:"Utah Mammoth",
+  VAN:"Vancouver Canucks", VGK:"Vegas Golden Knights", WSH:"Washington Capitals", WPG:"Winnipeg Jets"
+};
+
+function teamLabel(name, abbr) {
+  /* Nom donné par l'API s'il est exploitable, sinon nom complet depuis le code, sinon le code */
+  if (name && String(name).trim().length > 3) return String(name).trim();
+  return TEAM_NAMES[abbr] || abbr || "";
+}
+
 function renderMatchCard(match) {
   const card = document.createElement("button");
   card.type = "button";
-  card.className = "w-full bg-white border border-slate-200 rounded-2xl p-3 sm:p-5 flex items-center justify-between gap-2 shadow-sm hover:shadow-md hover:border-red-300 transition text-left";
+  card.className = "w-full bg-white border border-slate-200 rounded-2xl p-3 sm:p-5 flex items-center justify-between gap-1 sm:gap-3 shadow-sm hover:shadow-md hover:border-red-300 transition text-left";
 
-  const home = escapeHtml(match.home_team);
-  const away = escapeHtml(match.away_team);
+  const home = escapeHtml(teamLabel(match.home_team, match.home_abbr));
+  const away = escapeHtml(teamLabel(match.away_team, match.away_abbr));
 
   const homeLogo = escapeHtml(match.home_logo || `https://assets.nhle.com/logos/nhl/svg/${match.home_abbr}_light.svg`);
   const awayLogo = escapeHtml(match.away_logo || `https://assets.nhle.com/logos/nhl/svg/${match.away_abbr}_light.svg`);
 
-  /* Noms des équipes agrandis : text-base (mobile) -> text-xl/2xl (grand écran) */
+  /* Logos agrandis (64 px mobile, 96 px grand écran), nom en dessous */
   card.innerHTML = `
-    <div class="flex items-center gap-2 sm:gap-3 flex-1 justify-end min-w-0">
-      <span class="font-extrabold text-slate-900 text-right text-base sm:text-xl leading-tight break-words">${home}</span>
-      <img src="${homeLogo}" alt="" class="w-9 h-9 sm:w-12 sm:h-12 object-contain shrink-0" onerror="this.style.visibility='hidden'">
+    <div class="flex flex-col items-center gap-1 flex-1 min-w-0 text-center">
+      <img src="${homeLogo}" alt="" class="w-16 h-16 sm:w-24 sm:h-24 object-contain" onerror="this.style.visibility='hidden'">
+      <span class="font-extrabold text-slate-900 text-sm sm:text-xl leading-tight break-words">${home}</span>
     </div>
 
     <div class="px-1 sm:px-3 text-center shrink-0">
-      <span class="text-[10px] sm:text-xs bg-slate-100 text-slate-700 px-2 py-1.5 rounded-full font-bold border whitespace-nowrap">${escapeHtml(match.game_state || "NHL")}</span>
+      <span class="text-xs sm:text-sm bg-slate-100 text-slate-700 px-2 py-1.5 rounded-full font-bold border whitespace-nowrap">${escapeHtml(match.game_state || "NHL")}</span>
       <div class="text-[9px] text-slate-400 mt-1">ANALYSER</div>
     </div>
 
-    <div class="flex items-center gap-2 sm:gap-3 flex-1 justify-start min-w-0">
-      <img src="${awayLogo}" alt="" class="w-9 h-9 sm:w-12 sm:h-12 object-contain shrink-0" onerror="this.style.visibility='hidden'">
-      <span class="font-extrabold text-slate-900 text-left text-base sm:text-xl leading-tight break-words">${away}</span>
+    <div class="flex flex-col items-center gap-1 flex-1 min-w-0 text-center">
+      <img src="${awayLogo}" alt="" class="w-16 h-16 sm:w-24 sm:h-24 object-contain" onerror="this.style.visibility='hidden'">
+      <span class="font-extrabold text-slate-900 text-sm sm:text-xl leading-tight break-words">${away}</span>
     </div>`;
 
   card.addEventListener("click", () => {
@@ -259,9 +276,7 @@ async function fetchPrediction(homeTeam, awayTeam) {
   currentMatchData = null;
 
   /* Titre : noms complets des équipes si disponibles, sinon les codes */
-  $("modal-teams").textContent = selectedMatch && selectedMatch.home_team
-    ? `${selectedMatch.home_team} vs ${selectedMatch.away_team}`
-    : `${homeTeam} vs ${awayTeam}`;
+  $("modal-teams").textContent = `${teamLabel(selectedMatch && selectedMatch.home_team, homeTeam)} vs ${teamLabel(selectedMatch && selectedMatch.away_team, awayTeam)}`;
 
   ["pred-home-win","pred-draw","pred-away-win","pred-xg","pred-over55","pred-score"].forEach(id => {
     $(id).textContent = "…";
