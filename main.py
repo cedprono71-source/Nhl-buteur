@@ -22,11 +22,11 @@ from pydantic import BaseModel, Field
 from scipy.stats import nbinom, poisson
 
 # ============================================================
-# NHL GOALSCORER ANALYTICS - VERSION 39.71
+# NHL GOALSCORER ANALYTICS - VERSION 39.72
 # Compatible avec Render : main:app
 # ============================================================
 
-VERSION = "39.71"
+VERSION = "39.72"
 DB_FILE = os.getenv("DB_FILE", "nhl_history.db")
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()   # si défini : PostgreSQL externe (ex. Neon), sinon SQLite local
 USE_PG = bool(DATABASE_URL)
@@ -870,7 +870,12 @@ def _localized_team_name(team_obj):
     common = team_obj.get("commonName", {})
     if isinstance(place, dict): place = place.get("default", "")
     if isinstance(common, dict): common = common.get("default", "")
-    return f"{place} {common}".strip()
+    full = f"{place} {common}".strip()
+    if full:
+        return full
+    name = team_obj.get("name", {})
+    if isinstance(name, dict): name = name.get("default", "")
+    return (name or team_obj.get("abbrev", "") or "").strip()
 
 def get_nhl_matches_for_date(date):
     try:
