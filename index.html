@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#f1f5f9">
-<title>NHL GoalScorer Analytics 39.0</title>
+<title>NHL GoalScorer Analytics 39.7</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
   button:focus-visible,input:focus-visible { outline:3px solid #f87171; outline-offset:2px; }
@@ -15,11 +15,12 @@
 
 <header class="bg-white border-b border-slate-200 py-4 px-4 sm:px-6 sticky top-0 z-40 shadow-sm">
   <div class="max-w-4xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-3">
-    <h1 class="text-lg sm:text-xl font-extrabold tracking-wide text-red-600">🏒 <span class="text-slate-900">NHL GoalScorer Analytics</span> <span class="text-xs text-slate-400">39.0 • MODE SÉCURITÉ</span></h1>
-    <div class="flex items-center gap-2">
+    <h1 class="text-lg sm:text-xl font-extrabold tracking-wide text-red-600">🏒 <span class="text-slate-900">NHL GoalScorer Analytics</span> <span class="text-xs text-slate-400">39.7 • MODE SÉCURITÉ</span></h1>
+    <div class="flex flex-wrap items-center justify-center gap-2">
       <label for="date-picker" class="text-xs font-bold text-slate-500 uppercase">Date :</label>
       <input type="date" id="date-picker" class="bg-slate-50 px-3 py-2 rounded-lg border border-slate-300 text-sm">
       <button id="refresh-btn" class="bg-slate-900 text-white px-3 py-2 rounded-lg text-sm font-bold">Actualiser</button>
+      <button id="history-btn" class="bg-white text-slate-900 px-3 py-2 rounded-lg text-sm font-bold border border-slate-300">📜 Historique</button>
     </div>
   </div>
 </header>
@@ -31,12 +32,13 @@
   <div id="no-matches" class="hidden text-center py-10 text-slate-500 font-medium"></div>
 </main>
 
+<!-- Fenêtre d'analyse d'un match -->
 <div id="modal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm hidden items-center justify-center p-2 sm:p-4 z-50">
  <section class="bg-white w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[94vh]">
   <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center gap-3">
-    <div>
+    <div class="min-w-0">
       <div class="text-xs text-slate-500 font-bold uppercase">Analyse du match</div>
-      <div id="modal-teams" class="font-extrabold text-lg">NHL</div>
+      <div id="modal-teams" class="font-extrabold text-xl sm:text-2xl leading-tight">NHL</div>
     </div>
     <button id="close-modal" aria-label="Fermer" class="text-slate-400 hover:text-slate-800 text-3xl leading-none">&times;</button>
   </div>
@@ -69,6 +71,20 @@
     <div id="safe-top5" class="space-y-2"></div>
     <div id="players-container" class="space-y-3" aria-live="polite"></div>
     <div id="extra-data" class="space-y-3"></div>
+  </div>
+ </section>
+</div>
+
+<!-- Fenêtre Historique -->
+<div id="history-modal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm hidden items-center justify-center p-2 sm:p-4 z-50">
+ <section class="bg-white w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[94vh]">
+  <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center gap-3">
+    <div class="font-extrabold text-xl sm:text-2xl">📜 Historique</div>
+    <button id="close-history" aria-label="Fermer" class="text-slate-400 hover:text-slate-800 text-3xl leading-none">&times;</button>
+  </div>
+  <div class="p-3 sm:p-4 flex-1 overflow-y-auto modal-scroll space-y-3">
+    <div id="metrics-box"></div>
+    <div id="history-list" class="space-y-2"></div>
   </div>
  </section>
 </div>
@@ -163,10 +179,11 @@ function renderMatchCard(match) {
   const homeLogo = escapeHtml(match.home_logo || `https://assets.nhle.com/logos/nhl/svg/${match.home_abbr}_light.svg`);
   const awayLogo = escapeHtml(match.away_logo || `https://assets.nhle.com/logos/nhl/svg/${match.away_abbr}_light.svg`);
 
+  /* Noms des équipes agrandis : text-base (mobile) -> text-xl/2xl (grand écran) */
   card.innerHTML = `
     <div class="flex items-center gap-2 sm:gap-3 flex-1 justify-end min-w-0">
-      <span class="font-bold text-slate-800 text-right text-xs sm:text-base">${home}</span>
-      <img src="${homeLogo}" alt="" class="w-9 h-9 sm:w-12 sm:h-12 object-contain" onerror="this.style.visibility='hidden'">
+      <span class="font-extrabold text-slate-900 text-right text-base sm:text-xl leading-tight break-words">${home}</span>
+      <img src="${homeLogo}" alt="" class="w-9 h-9 sm:w-12 sm:h-12 object-contain shrink-0" onerror="this.style.visibility='hidden'">
     </div>
 
     <div class="px-1 sm:px-3 text-center shrink-0">
@@ -175,8 +192,8 @@ function renderMatchCard(match) {
     </div>
 
     <div class="flex items-center gap-2 sm:gap-3 flex-1 justify-start min-w-0">
-      <img src="${awayLogo}" alt="" class="w-9 h-9 sm:w-12 sm:h-12 object-contain" onerror="this.style.visibility='hidden'">
-      <span class="font-bold text-slate-800 text-left text-xs sm:text-base">${away}</span>
+      <img src="${awayLogo}" alt="" class="w-9 h-9 sm:w-12 sm:h-12 object-contain shrink-0" onerror="this.style.visibility='hidden'">
+      <span class="font-extrabold text-slate-900 text-left text-base sm:text-xl leading-tight break-words">${away}</span>
     </div>`;
 
   card.addEventListener("click", () => {
@@ -212,6 +229,24 @@ function setActiveButton(id, active) {
     : "flex-1 py-3 text-sm font-bold rounded-lg text-slate-600 hover:text-slate-900";
 }
 
+/* Remplit la fenêtre d'analyse avec une prédiction (en direct ou issue de l'historique) */
+function showPrediction(data) {
+  currentMatchData = data;
+  const p = data.match_prediction || {};
+
+  $("pred-home-win").textContent = p.home_win_pct ?? "—";
+  $("pred-draw").textContent = p.draw_or_ot_pct ?? "—";
+  $("pred-away-win").textContent = p.away_win_pct ?? "—";
+  $("pred-xg").textContent = `${p.expected_goals_home ?? "—"} - ${p.expected_goals_away ?? "—"}`;
+  $("pred-over55").textContent = p.over_5_5_goals_prob ?? "—";
+  $("pred-score").textContent = p.most_likely_score
+    ? `${p.most_likely_score.home} - ${p.most_likely_score.away}`
+    : "—";
+
+  renderPlayers();
+  renderExtraData();
+}
+
 async function fetchPrediction(homeTeam, awayTeam) {
   if (!homeTeam || !awayTeam || ["DOMICILE","EXTERIEUR","HOME","AWAY"].includes(String(homeTeam).toUpperCase())) {
     openModal();
@@ -223,7 +258,10 @@ async function fetchPrediction(homeTeam, awayTeam) {
   activeStatType = "goals";
   currentMatchData = null;
 
-  $("modal-teams").textContent = `${homeTeam} vs ${awayTeam}`;
+  /* Titre : noms complets des équipes si disponibles, sinon les codes */
+  $("modal-teams").textContent = selectedMatch && selectedMatch.home_team
+    ? `${selectedMatch.home_team} vs ${selectedMatch.away_team}`
+    : `${homeTeam} vs ${awayTeam}`;
 
   ["pred-home-win","pred-draw","pred-away-win","pred-xg","pred-over55","pred-score"].forEach(id => {
     $(id).textContent = "…";
@@ -254,20 +292,7 @@ async function fetchPrediction(homeTeam, awayTeam) {
       throw new Error(data.detail || `Erreur HTTP ${response.status}`);
     }
 
-    currentMatchData = data;
-    const p = data.match_prediction || {};
-
-    $("pred-home-win").textContent = p.home_win_pct ?? "—";
-    $("pred-draw").textContent = p.draw_or_ot_pct ?? "—";
-    $("pred-away-win").textContent = p.away_win_pct ?? "—";
-    $("pred-xg").textContent = `${p.expected_goals_home ?? "—"} - ${p.expected_goals_away ?? "—"}`;
-    $("pred-over55").textContent = p.over_5_5_goals_prob ?? "—";
-    $("pred-score").textContent = p.most_likely_score
-      ? `${p.most_likely_score.home} - ${p.most_likely_score.away}`
-      : "—";
-
-    renderPlayers();
-    renderExtraData();
+    showPrediction(data);
 
   } catch (err) {
     displayError(err.message || "Erreur lors de la récupération des données.");
@@ -324,7 +349,7 @@ function renderPlayers() {
     <section class="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
       <div class="flex items-center justify-between gap-2 mb-2">
         <div class="font-extrabold text-emerald-900">🛡️ TOP 5 — MODE SÉCURITÉ</div>
-        <span class="text-[10px] font-bold text-emerald-800">39.0</span>
+        <span class="text-[10px] font-bold text-emerald-800">39.7</span>
       </div>
 
       <div class="text-[11px] text-emerald-800 mb-2">Tri selon probabilité estimée, régularité et forme récente.</div>
@@ -388,10 +413,6 @@ function renderExtraData() {
     ? currentMatchData.goalies_home
     : currentMatchData.goalies_away;
 
-  const roster = activeModalTab === "home"
-    ? currentMatchData.roster_home
-    : currentMatchData.roster_away;
-
   const teamStats = currentMatchData.team_stats?.[activeModalTab];
   const values = currentMatchData.value_analysis || {};
 
@@ -434,14 +455,127 @@ function renderExtraData() {
     </div>
 
     <div class="text-[11px] text-slate-400 text-center">
-      Version ${escapeHtml(currentMatchData.version || "39.0")} • Le score sécurité mesure la régularité des données, jamais une garantie de résultat.
+      Version ${escapeHtml(currentMatchData.version || "39.7")} • Le score sécurité mesure la régularité des données, jamais une garantie de résultat.
     </div>`;
 }
 
+/* ---------------- Historique ---------------- */
+
+function openHistory() {
+  $("history-modal").classList.remove("hidden");
+  $("history-modal").classList.add("flex");
+  document.body.classList.add("overflow-hidden");
+  loadHistory();
+}
+
+function closeHistory() {
+  $("history-modal").classList.add("hidden");
+  $("history-modal").classList.remove("flex");
+  document.body.classList.remove("overflow-hidden");
+}
+
+function formatParis(iso) {
+  try {
+    return new Date(iso).toLocaleString("fr-FR", {
+      timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"
+    });
+  } catch (e) {
+    return String(iso || "");
+  }
+}
+
+async function loadMetrics() {
+  const box = $("metrics-box");
+  box.innerHTML = "";
+  try {
+    const response = await fetch("/api/metrics");
+    if (!response.ok) return;
+    const m = await response.json();
+    const n = m.games_evaluated || 0;
+    const acc = m.match_winner_home && m.match_winner_home.accuracy_pct != null
+      ? `${m.match_winner_home.accuracy_pct} %` : "—";
+    const safe = m.safe_top5_goals && m.safe_top5_goals.hit_rate_pct != null
+      ? `${m.safe_top5_goals.hit_rate_pct} % (${m.safe_top5_goals.n} joueurs)` : "—";
+    box.innerHTML = `
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 space-y-1">
+        <div class="font-bold text-sm text-slate-900">📈 Résultats du modèle</div>
+        <div>Matchs évalués : <b>${n}</b></div>
+        <div>Vainqueur trouvé : <b>${escapeHtml(acc)}</b></div>
+        <div>Top 5 sécurité (buteurs) marque : <b>${escapeHtml(safe)}</b></div>
+        ${n < 30 ? '<div class="text-slate-400">Trop peu de matchs pour conclure : ces chiffres sont encore très bruités.</div>' : ""}
+      </div>`;
+  } catch (e) { /* les métriques sont facultatives */ }
+}
+
+async function loadHistory() {
+  const list = $("history-list");
+  list.innerHTML = '<div class="text-center py-8 text-slate-500">Chargement…</div>';
+  loadMetrics();
+  try {
+    const response = await fetch("/api/history?limit=50");
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || `Erreur HTTP ${response.status}`);
+
+    if (!data.predictions || !data.predictions.length) {
+      list.innerHTML = '<div class="text-center py-8 text-slate-500 bg-slate-50 rounded-xl">Aucune prédiction enregistrée pour le moment.</div>';
+      return;
+    }
+
+    list.innerHTML = "";
+    data.predictions.forEach(row => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "w-full text-left bg-white border border-slate-200 rounded-xl p-3 hover:border-red-300 transition";
+      item.innerHTML = `
+        <div class="flex items-center justify-between gap-2">
+          <div class="font-extrabold text-base sm:text-lg text-slate-900">${escapeHtml(row.match_name)}</div>
+          <div class="text-[11px] text-slate-400 shrink-0">${escapeHtml(formatParis(row.created_at))}</div>
+        </div>
+        <div class="text-xs text-slate-600 mt-1">
+          Victoire dom. <b>${row.home_win ?? "—"}%</b> • ext. <b>${row.away_win ?? "—"}%</b>
+          • Buts attendus <b>${row.home_xg ?? "—"} - ${row.away_xg ?? "—"}</b>
+        </div>`;
+      item.addEventListener("click", () => openHistoryDetail(row));
+      list.appendChild(item);
+    });
+  } catch (err) {
+    list.innerHTML = `<div class="text-center py-8 text-red-600">Impossible de charger l'historique : ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function openHistoryDetail(row) {
+  closeHistory();
+  selectedMatch = null;
+  activeModalTab = "home";
+  activeStatType = "goals";
+  currentMatchData = null;
+  $("modal-teams").textContent = row.match_name;
+  ["pred-home-win","pred-draw","pred-away-win","pred-xg","pred-over55","pred-score"].forEach(id => { $(id).textContent = "…"; });
+  $("players-container").innerHTML = '<div class="text-center py-10 text-slate-500">Chargement de la prédiction…</div>';
+  $("extra-data").innerHTML = "";
+  $("safe-top5").innerHTML = "";
+  setActiveButton("btn-home", true);
+  setActiveButton("btn-away", false);
+  openModal();
+  try {
+    const response = await fetch(`/api/history/${encodeURIComponent(row.id)}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || `Erreur HTTP ${response.status}`);
+    showPrediction(data);
+  } catch (err) {
+    displayError(err.message || "Impossible de charger cette prédiction.");
+  }
+}
+
 $("close-modal").addEventListener("click", closeModal);
+$("close-history").addEventListener("click", closeHistory);
+$("history-btn").addEventListener("click", openHistory);
 
 $("modal").addEventListener("click", e => {
   if (e.target === $("modal")) closeModal();
+});
+$("history-modal").addEventListener("click", e => {
+  if (e.target === $("history-modal")) closeHistory();
 });
 
 $("tab-type-goals").addEventListener("click", () => switchStatType("goals"));
@@ -454,7 +588,7 @@ $("refresh-btn").addEventListener("click", () => loadNhlMatches(datePicker.value
 datePicker.addEventListener("change", e => loadNhlMatches(e.target.value));
 
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape") closeModal();
+  if (e.key === "Escape") { closeModal(); closeHistory(); }
 });
 
 loadNhlMatches(datePicker.value);
