@@ -22,11 +22,11 @@ from pydantic import BaseModel, Field
 from scipy.stats import nbinom, poisson
 
 # ============================================================
-# NHL GOALSCORER ANALYTICS - VERSION 39.7
+# NHL GOALSCORER ANALYTICS - VERSION 39.71
 # Compatible avec Render : main:app
 # ============================================================
 
-VERSION = "39.70"
+VERSION = "39.71"
 DB_FILE = os.getenv("DB_FILE", "nhl_history.db")
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()   # si défini : PostgreSQL externe (ex. Neon), sinon SQLite local
 USE_PG = bool(DATABASE_URL)
@@ -1232,7 +1232,10 @@ def predict_match_legacy(req: LegacyMatchRequest):
 def get_history(limit: int = 50):
     limit = int(clamp(limit, 1, 500))
     with db_connection() as db:
-        rows = db.execute("SELECT * FROM predictions ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        rows = db.execute(
+            "SELECT id, created_at, match_name, home_team, away_team, home_xg, away_xg, "
+            "home_win, away_win, over_55 FROM predictions ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
     return {"count": len(rows), "predictions": [dict(row) for row in rows]}
 
 @app.get("/api/history/{prediction_id}")
