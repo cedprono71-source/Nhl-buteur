@@ -1,639 +1,823 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#f1f5f9">
-<title>NHL GoalScorer Analytics 39.72</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<style>
-  button:focus-visible,input:focus-visible { outline:3px solid #f87171; outline-offset:2px; }
-  .modal-scroll { overscroll-behavior:contain; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f1f5f9">
+  <title>NHL GoalScorer Analytics 39.72</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    button:focus-visible, input:focus-visible {
+      outline: 3px solid #f87171;
+      outline-offset: 2px;
+    }
+    .modal-scroll { overscroll-behavior: contain; }
+  </style>
 </head>
 <body class="bg-slate-100 text-slate-900 min-h-screen font-sans">
 
-<header class="bg-white border-b border-slate-200 py-2 px-3 sm:px-6 sticky top-0 z-40 shadow-sm">
-  <div class="max-w-4xl mx-auto flex items-center justify-between gap-2">
-    <h1 class="text-lg sm:text-xl font-extrabold tracking-wide text-red-600 leading-tight min-w-0">🏒 <span class="text-slate-900">NHL<span class="hidden sm:inline"> GoalScorer Analytics</span></span> <span class="hidden sm:inline text-xs text-slate-400">39.72 • MODE SÉCURITÉ</span></h1>
-    <div class="flex items-center gap-1.5 shrink-0">
-      <label for="date-picker" class="sr-only">Date</label>
-      <input type="date" id="date-picker" class="bg-slate-50 px-2 py-2 rounded-lg border border-slate-300 text-sm">
-      <button id="refresh-btn" aria-label="Actualiser" class="bg-slate-900 text-white w-10 h-10 rounded-lg text-lg font-bold leading-none">⟳</button>
-      <button id="history-btn" aria-label="Historique" class="bg-white text-slate-900 w-10 h-10 rounded-lg text-lg border border-slate-300 leading-none">📜</button>
-    </div>
-  </div>
-</header>
+  <header class="bg-white border-b border-slate-200 py-2 px-3 sm:px-6 sticky top-0 z-40 shadow-sm">
+    <div class="max-w-4xl mx-auto flex items-center justify-between gap-2">
+      <h1 class="text-lg sm:text-xl font-extrabold tracking-wide text-red-600 leading-tight min-w-0">
+        🏒 <span class="text-slate-900">NHL<span class="hidden sm:inline"> GoalScorer Analytics</span></span>
+        <span class="hidden sm:inline text-xs text-slate-400">39.72 • MODE SÉCURITÉ</span>
+      </h1>
 
-<main class="max-w-4xl mx-auto p-4 sm:p-6">
-  <div id="api-status" class="mb-4 text-xs text-slate-500 text-center">Connexion à l'API…</div>
-  <div id="loading" class="text-center py-12 text-slate-500 font-medium">Chargement des matchs NHL…</div>
-  <div id="matches-container" class="space-y-3"></div>
-  <div id="no-matches" class="hidden text-center py-10 text-slate-500 font-medium"></div>
-</main>
-
-<!-- Fenêtre d'analyse d'un match -->
-<div id="modal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm hidden items-center justify-center p-2 sm:p-4 z-50">
- <section class="bg-white w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[94vh]">
-  <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center gap-3">
-    <div class="min-w-0">
-      <div class="text-xs text-slate-500 font-bold uppercase">Analyse du match</div>
-      <div id="modal-teams" class="font-extrabold text-xl sm:text-2xl leading-tight">NHL</div>
-    </div>
-    <button id="close-modal" aria-label="Fermer" class="text-slate-400 hover:text-slate-800 text-3xl leading-none">&times;</button>
-  </div>
-
-  <div class="p-3 sm:p-4 flex-1 overflow-y-auto modal-scroll space-y-4">
-    <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 sm:p-4 space-y-3">
-      <div class="text-xs font-bold text-slate-500 uppercase">Pronostics & buts attendus (xG)</div>
-      <div>
-        <div class="flex justify-between items-end">
-          <div><div class="text-xs text-slate-500 uppercase font-bold">Domicile</div><div id="pred-home-win" class="font-extrabold text-2xl text-red-600">—</div></div>
-          <div class="text-center"><div class="text-xs text-slate-500 uppercase font-bold">Prolong.</div><div id="pred-draw" class="font-bold text-base text-slate-500">—</div></div>
-          <div class="text-right"><div class="text-xs text-slate-500 uppercase font-bold">Extérieur</div><div id="pred-away-win" class="font-extrabold text-2xl text-slate-800">—</div></div>
-        </div>
-        <div class="flex h-3 rounded-full overflow-hidden mt-2 bg-slate-200" role="img" aria-label="Probabilités de victoire">
-          <div id="bar-home" class="bg-red-600 transition-all" style="width:50%"></div>
-          <div id="bar-away" class="bg-slate-800 transition-all" style="width:50%"></div>
-        </div>
+      <div class="flex items-center gap-1.5 shrink-0">
+        <label for="date-picker" class="sr-only">Date</label>
+        <input type="date" id="date-picker" class="bg-slate-50 px-2 py-2 rounded-lg border border-slate-300 text-sm">
+        <button id="refresh-btn" aria-label="Actualiser" class="bg-slate-900 text-white w-10 h-10 rounded-lg text-lg font-bold leading-none">⟳</button>
+        <button id="history-btn" aria-label="Historique" class="bg-white text-slate-900 w-10 h-10 rounded-lg text-lg border border-slate-300 leading-none">📜</button>
       </div>
-      <div class="flex flex-wrap justify-between gap-2 text-sm font-semibold text-slate-600">
-        <div>Buts attendus : <span id="pred-xg" class="text-slate-900">—</span></div>
-        <div>Over 5.5 : <span id="pred-over55" class="text-red-600">—</span></div>
-      </div>
-      <div class="text-center text-xs text-slate-500">Score statistique le plus probable : <span id="pred-score" class="font-bold text-slate-800">—</span></div>
     </div>
-
-    <div class="flex bg-slate-200 p-1 rounded-xl">
-      <button id="tab-type-goals" class="flex-1 py-3 text-sm font-bold rounded-lg bg-white shadow-sm">🎯 Buteurs</button>
-      <button id="tab-type-assists" class="flex-1 py-3 text-sm font-bold rounded-lg text-slate-600">🤝 Passeurs</button>
-    </div>
-
-    <div class="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-      <button id="btn-home" class="flex-1 py-3 text-sm font-bold rounded-lg bg-red-600 text-white">Domicile</button>
-      <button id="btn-away" class="flex-1 py-3 text-sm font-bold rounded-lg text-slate-600">Extérieur</button>
-    </div>
-
-    <div id="safe-top5" class="space-y-2"></div>
-    <div id="players-container" class="space-y-3" aria-live="polite"></div>
-    <div id="extra-data" class="space-y-3"></div>
-  </div>
- </section>
-</div>
-
-<!-- Fenêtre Historique -->
-<div id="history-modal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm hidden items-center justify-center p-2 sm:p-4 z-50">
- <section class="bg-white w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[94vh]">
-  <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center gap-3">
-    <div class="font-extrabold text-xl sm:text-2xl">📜 Historique</div>
-    <button id="close-history" aria-label="Fermer" class="text-slate-400 hover:text-slate-800 text-3xl leading-none">&times;</button>
-  </div>
-  <div class="p-3 sm:p-4 flex-1 overflow-y-auto modal-scroll space-y-3">
-    <div id="metrics-box"></div>
-    <div id="history-list" class="space-y-2"></div>
-  </div>
- </section>
-</div>
-
-<script>
-"use strict";
-
-let currentMatchData = null;
-let activeModalTab = "home";
-let activeStatType = "goals";
-let selectedMatch = null;
-
-const $ = id => document.getElementById(id);
-const datePicker = $("date-picker");
-
-const today = new Date();
-const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().slice(0,10);
-datePicker.value = localDate;
-
-function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"']/g, c => ({
-    "&":"&amp;",
-    "<":"&lt;",
-    ">":"&gt;",
-    '"':"&quot;",
-    "'":"&#39;"
-  }[c]));
-}
-
-function setStatus(message, bad=false) {
-  $("api-status").textContent = message;
-  $("api-status").className = "mb-4 text-xs text-center " + (bad ? "text-red-600 font-semibold" : "text-slate-500");
-}
-
-function displayError(message) {
-  $("safe-top5").innerHTML = "";
-  $("players-container").innerHTML = `
-    <div class="rounded-xl border border-red-200 bg-red-50 p-5 text-center">
-      <div class="text-3xl mb-2">⚠️</div>
-      <div class="font-bold text-red-700">${escapeHtml(message)}</div>
-      <button id="retry-prediction" class="mt-4 rounded-lg bg-red-600 px-5 py-3 text-white font-bold">Réessayer</button>
-    </div>`;
-
-  $("retry-prediction").addEventListener("click", () => {
-    if (selectedMatch) {
-      fetchPrediction(selectedMatch.home_abbr, selectedMatch.away_abbr);
-    }
-  });
-}
-
-async function loadNhlMatches(date) {
-  $("loading").classList.remove("hidden");
-  $("matches-container").innerHTML = "";
-  $("no-matches").classList.add("hidden");
-  setStatus("Récupération du calendrier NHL…");
-
-  try {
-    const response = await fetch(`/api/matches/nhl?date=${encodeURIComponent(date)}`);
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.detail || `Erreur HTTP ${response.status}`);
-    }
-
-    $("loading").classList.add("hidden");
-
-    if (!Array.isArray(data.matches) || data.matches.length === 0) {
-      $("no-matches").textContent = "Aucun match NHL trouvé pour cette date.";
-      $("no-matches").classList.remove("hidden");
-    } else {
-      data.matches.forEach(renderMatchCard);
-    }
-
-    setStatus(`${data.matches.length} match(s) trouvé(s) • Fuseau Europe/Paris`);
-
-  } catch (err) {
-    $("loading").classList.add("hidden");
-    $("no-matches").textContent = `Impossible de charger le calendrier : ${err.message}`;
-    $("no-matches").classList.remove("hidden");
-    setStatus("Erreur de connexion à l'API", true);
-  }
-}
-
-const TEAM_NAMES = {
-  ANA:"Anaheim Ducks", BOS:"Boston Bruins", BUF:"Buffalo Sabres", CGY:"Calgary Flames",
-  CAR:"Carolina Hurricanes", CHI:"Chicago Blackhawks", COL:"Colorado Avalanche", CBJ:"Columbus Blue Jackets",
-  DAL:"Dallas Stars", DET:"Detroit Red Wings", EDM:"Edmonton Oilers", FLA:"Florida Panthers",
-  LAK:"Los Angeles Kings", MIN:"Minnesota Wild", MTL:"Montréal Canadiens", NSH:"Nashville Predators",
-  NJD:"New Jersey Devils", NYI:"New York Islanders", NYR:"New York Rangers", OTT:"Ottawa Senators",
-  PHI:"Philadelphia Flyers", PIT:"Pittsburgh Penguins", SJS:"San Jose Sharks", SEA:"Seattle Kraken",
-  STL:"St. Louis Blues", TBL:"Tampa Bay Lightning", TOR:"Toronto Maple Leafs", UTA:"Utah Mammoth",
-  VAN:"Vancouver Canucks", VGK:"Vegas Golden Knights", WSH:"Washington Capitals", WPG:"Winnipeg Jets"
-};
-
-function teamLabel(name, abbr) {
-  /* Nom donné par l'API s'il est exploitable, sinon nom complet depuis le code, sinon le code */
-  if (name && String(name).trim().length > 3) return String(name).trim();
-  return TEAM_NAMES[abbr] || abbr || "";
-}
-
-function stateLabel(match) {
-  const text = String(match.game_state || "NHL");
-  const m = text.match(/^(\d{2}):\d{2}$/);
-  return m && Number(m[1]) < 7 ? "🌙 " + text : text;
-}
-
-function renderMatchCard(match) {
-  const card = document.createElement("button");
-  card.type = "button";
-  card.className = "w-full bg-white border border-slate-200 rounded-2xl p-3 sm:p-5 flex items-center justify-between gap-1 sm:gap-3 shadow-sm hover:shadow-md hover:border-red-300 transition text-left";
-
-  const home = escapeHtml(teamLabel(match.home_team, match.home_abbr));
-  const away = escapeHtml(teamLabel(match.away_team, match.away_abbr));
-
-  const homeLogo = escapeHtml(match.home_logo || `https://assets.nhle.com/logos/nhl/svg/${match.home_abbr}_light.svg`);
-  const awayLogo = escapeHtml(match.away_logo || `https://assets.nhle.com/logos/nhl/svg/${match.away_abbr}_light.svg`);
-
-  /* Logos agrandis (64 px mobile, 96 px grand écran), nom en dessous */
-  card.innerHTML = `
-    <div class="flex flex-col items-center gap-1 flex-1 min-w-0 text-center">
-      <img src="${homeLogo}" alt="" class="w-16 h-16 sm:w-24 sm:h-24 object-contain" onerror="this.style.visibility='hidden'">
-      <span class="font-extrabold text-slate-900 text-sm sm:text-xl leading-tight break-words">${home}</span>
-    </div>
-
-    <div class="px-1 sm:px-3 text-center shrink-0">
-      <span class="text-xs sm:text-sm bg-slate-100 text-slate-700 px-2 py-1.5 rounded-full font-bold border whitespace-nowrap">${escapeHtml(stateLabel(match))}</span>
-      <div class="text-[10px] text-slate-400 mt-1">ANALYSER</div>
-    </div>
-
-    <div class="flex flex-col items-center gap-1 flex-1 min-w-0 text-center">
-      <img src="${awayLogo}" alt="" class="w-16 h-16 sm:w-24 sm:h-24 object-contain" onerror="this.style.visibility='hidden'">
-      <span class="font-extrabold text-slate-900 text-sm sm:text-xl leading-tight break-words">${away}</span>
-    </div>`;
-
-  card.addEventListener("click", () => {
-    if (!match.home_abbr || !match.away_abbr) {
-      setStatus("Codes des équipes absents du calendrier.", true);
-      return;
-    }
-
-    selectedMatch = match;
-    fetchPrediction(match.home_abbr, match.away_abbr);
-  });
-
-  $("matches-container").appendChild(card);
-}
-
-function openModal() {
-  $("modal").classList.remove("hidden");
-  $("modal").classList.add("flex");
-  document.body.classList.add("overflow-hidden");
-}
-
-function closeModal() {
-  $("modal").classList.add("hidden");
-  $("modal").classList.remove("flex");
-  document.body.classList.remove("overflow-hidden");
-}
-
-function setActiveButton(id, active) {
-  const el = $(id);
-
-  el.className = active
-    ? "flex-1 py-3 text-sm font-bold rounded-lg bg-red-600 text-white shadow-sm"
-    : "flex-1 py-3 text-sm font-bold rounded-lg text-slate-600 hover:text-slate-900";
-}
-
-/* Remplit la fenêtre d'analyse avec une prédiction (en direct ou issue de l'historique) */
-function setWinBar(home, away) {
-  const h = Number(home), a = Number(away);
-  const total = (h + a) || 100;
-  $("bar-home").style.width = (h / total * 100) + "%";
-  $("bar-away").style.width = (a / total * 100) + "%";
-}
-
-function showPrediction(data) {
-  currentMatchData = data;
-  const p = data.match_prediction || {};
-
-  setWinBar(p.home_win_pct_value ?? 50, p.away_win_pct_value ?? 50);
-  $("pred-home-win").textContent = p.home_win_pct ?? "—";
-  $("pred-draw").textContent = p.draw_or_ot_pct ?? "—";
-  $("pred-away-win").textContent = p.away_win_pct ?? "—";
-  $("pred-xg").textContent = `${p.expected_goals_home ?? "—"} - ${p.expected_goals_away ?? "—"}`;
-  $("pred-over55").textContent = p.over_5_5_goals_prob ?? "—";
-  $("pred-score").textContent = p.most_likely_score
-    ? `${p.most_likely_score.home} - ${p.most_likely_score.away}`
-    : "—";
-
-  renderPlayers();
-  renderExtraData();
-}
-
-async function fetchPrediction(homeTeam, awayTeam) {
-  if (!homeTeam || !awayTeam || ["DOMICILE","EXTERIEUR","HOME","AWAY"].includes(String(homeTeam).toUpperCase())) {
-    openModal();
-    displayError("Équipe non reconnue. Sélectionne un vrai match dans le calendrier.");
-    return;
-  }
-
-  activeModalTab = "home";
-  activeStatType = "goals";
-  currentMatchData = null;
-
-  /* Titre : noms complets des équipes si disponibles, sinon les codes */
-  $("modal-teams").textContent = `${teamLabel(selectedMatch && selectedMatch.home_team, homeTeam)} vs ${teamLabel(selectedMatch && selectedMatch.away_team, awayTeam)}`;
-
-  ["pred-home-win","pred-draw","pred-away-win","pred-xg","pred-over55","pred-score"].forEach(id => {
-    $(id).textContent = "…";
-  });
-
-  setWinBar(50, 50);
-  $("players-container").innerHTML = '<div class="text-center py-10 text-slate-500">Calcul des probabilités et récupération des statistiques NHL…</div>';
-  $("extra-data").innerHTML = "";
-  $("safe-top5").innerHTML = "";
-
-  setActiveButton("btn-home", true);
-  setActiveButton("btn-away", false);
-  openModal();
-
-  try {
-    const response = await fetch("/predict/goalscorers", {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({
-        league:"NHL",
-        home_team:homeTeam,
-        away_team:awayTeam
-      })
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.detail || `Erreur HTTP ${response.status}`);
-    }
-
-    showPrediction(data);
-
-  } catch (err) {
-    displayError(err.message || "Erreur lors de la récupération des données.");
-  }
-}
-
-function switchStatType(type) {
-  activeStatType = type;
-
-  $("tab-type-goals").className = type === "goals"
-    ? "flex-1 py-3 text-sm font-bold rounded-lg bg-white shadow-sm"
-    : "flex-1 py-3 text-sm font-bold rounded-lg text-slate-600";
-
-  $("tab-type-assists").className = type === "assists"
-    ? "flex-1 py-3 text-sm font-bold rounded-lg bg-white shadow-sm"
-    : "flex-1 py-3 text-sm font-bold rounded-lg text-slate-600";
-
-  renderPlayers();
-}
-
-function switchModalTab(tab) {
-  activeModalTab = tab;
-
-  setActiveButton("btn-home", tab === "home");
-  setActiveButton("btn-away", tab === "away");
-
-  renderPlayers();
-  renderExtraData();
-}
-
-function renderPlayers() {
-  if (!currentMatchData) return;
-
-  const key = activeStatType === "goals"
-    ? (activeModalTab === "home" ? "top_goalscorers_home" : "top_goalscorers_away")
-    : (activeModalTab === "home" ? "top_playmakers_home" : "top_playmakers_away");
-
-  const safeKey = activeStatType === "goals"
-    ? (activeModalTab === "home" ? "safe_top5_goals_home" : "safe_top5_goals_away")
-    : (activeModalTab === "home" ? "safe_top5_assists_home" : "safe_top5_assists_away");
-
-  const players = currentMatchData[key] || [];
-  const safePlayers = currentMatchData[safeKey] || [];
-
-  const container = $("players-container");
-  const safeContainer = $("safe-top5");
-
-  const confidenceBadge = p => {
-    const level = p.confidence;
-    const dot = level === "high" ? "bg-green-500" : level === "medium" ? "bg-amber-500" : "bg-red-500";
-    const label = level === "high" ? "Confiance élevée" : level === "medium" ? "Confiance moyenne" : "Risqué";
-    return `<span class="inline-flex items-center gap-1 text-xs font-semibold text-slate-600"><span class="inline-block w-2.5 h-2.5 rounded-full ${dot}"></span>${label}</span>`;
-  };
-
-  safeContainer.innerHTML = safePlayers.length ? `
-    <section class="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-      <div class="flex items-center justify-between gap-2 mb-2">
-        <div class="font-extrabold text-emerald-900">🛡️ TOP 5 — MODE SÉCURITÉ</div>
-        <span class="text-[11px] font-bold text-emerald-800">39.7</span>
-      </div>
-
-      <div class="text-xs text-emerald-800 mb-2">Tri selon probabilité estimée, régularité et forme récente.</div>
-
-      ${safePlayers.map((p,i) => `
-        <div class="flex items-center justify-between gap-2 py-2 border-t border-emerald-100">
-          <div class="min-w-0">
-            <div class="font-bold text-sm text-slate-900">${i+1}. ${escapeHtml(p.name)}</div>
-            <div class="text-xs text-slate-600">${escapeHtml(p.stats)} • Score sécurité ${p.security_score ?? "—"}/100</div>
-          </div>
-          <div class="text-right shrink-0">
-            <div class="font-extrabold text-red-700">${escapeHtml(p.prob)}</div>
-            ${confidenceBadge(p)}
-          </div>
-        </div>
-      `).join("")}
-    </section>` : "";
-
-  if (!players.length) {
-    container.innerHTML = '<div class="text-center py-8 text-slate-500 bg-slate-50 rounded-xl">Aucune statistique joueur disponible pour cette équipe pour le moment.</div>';
-    return;
-  }
-
-  container.innerHTML =
-    '<div class="text-xs font-bold uppercase text-slate-500 pt-1">Tous les profils classés par probabilité</div>' +
-    players.map(p => `
-      <article class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+  </header>
+
+  <main class="max-w-4xl mx-auto p-4 sm:p-6">
+    <div id="api-status" class="mb-4 text-xs text-slate-500 text-center">Connexion à l'API…</div>
+    <div id="loading" class="text-center py-12 text-slate-500 font-medium">Chargement des matchs NHL…</div>
+    <div id="matches-container" class="space-y-3"></div>
+    <div id="no-matches" class="hidden text-center py-10 text-slate-500 font-medium"></div>
+  </main>
+
+  <!-- Fenêtre d'analyse d'un match -->
+  <div id="modal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm hidden items-center justify-center p-2 sm:p-4 z-50">
+    <section class="bg-white w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[94vh]">
+      <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center gap-3">
         <div class="min-w-0">
-          <div class="font-bold text-sm text-slate-900">
-            ${escapeHtml(p.name)}
-            <span class="text-xs bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded">${escapeHtml(p.pos)}</span>
-          </div>
-
-          <div class="text-[13px] text-slate-500 mt-1">
-            ${escapeHtml(p.stats)} • <span class="font-semibold text-slate-700">${escapeHtml(p.momentum)}</span>
-          </div>
-
-          ${p.recent_form ? `
-            <div class="text-xs text-slate-500 mt-1">
-              10 derniers matchs : ${p.recent_form.goals} buts, ${p.recent_form.assists} passes, ${p.recent_form.shots} tirs
-            </div>` : ""}
-
-          <div class="mt-1">
-            ${confidenceBadge(p)}
-            <span class="text-[11px] text-slate-500">Score ${p.security_score ?? "—"}/100</span>
-          </div>
+          <div class="text-xs text-slate-500 font-bold uppercase">Analyse du match</div>
+          <div id="modal-teams" class="font-extrabold text-xl sm:text-2xl leading-tight">NHL</div>
         </div>
+        <button id="close-modal" aria-label="Fermer" class="text-slate-400 hover:text-slate-800 text-3xl leading-none">&times;</button>
+      </div>
 
-        <div class="text-right shrink-0">
-          <div class="text-red-600 font-extrabold text-base">${escapeHtml(p.prob)}</div>
-          <div class="text-xs text-slate-500">Cote juste ${p.odds ? escapeHtml(p.odds) : "—"}</div>
-        </div>
-        <div class="w-full h-1.5 rounded-full bg-slate-200" role="img" aria-label="Probabilité ${escapeHtml(p.prob)}">
-          <div class="h-1.5 rounded-full bg-red-500" style="width:${Math.max(0, Math.min(100, Number(p.probability_value) || 0))}%"></div>
-        </div>
-      </article>
-    `).join("");
-}
-
-function renderExtraData() {
-  if (!currentMatchData) return;
-
-  const goalies = activeModalTab === "home"
-    ? currentMatchData.goalies_home
-    : currentMatchData.goalies_away;
-
-  const teamStats = currentMatchData.team_stats?.[activeModalTab];
-  const values = currentMatchData.value_analysis || {};
-
-  $("extra-data").innerHTML = `
-    <div class="grid sm:grid-cols-2 gap-3">
-      <div class="bg-white border rounded-xl p-3">
-        <div class="font-bold text-sm mb-2">🥅 Gardiens de l'équipe</div>
-        ${(goalies || []).length
-          ? goalies.map(g => `
-              <div class="text-xs py-1 border-b last:border-0">
-                ${escapeHtml(g.name)} — % arrêts : ${g.save_pct ?? "—"} • GAA : ${g.gaa ?? "—"}
+      <div class="p-3 sm:p-4 flex-1 overflow-y-auto modal-scroll space-y-4">
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 sm:p-4 space-y-3">
+          <div class="text-xs font-bold text-slate-500 uppercase">Pronostics & buts attendus (xG)</div>
+          <div>
+            <div class="flex justify-between items-end">
+              <div>
+                <div class="text-xs text-slate-500 uppercase font-bold">Domicile</div>
+                <div id="pred-home-win" class="font-extrabold text-2xl text-red-600">—</div>
               </div>
-            `).join("")
-          : '<div class="text-xs text-slate-500">Données gardiens indisponibles.</div>'}
-      </div>
+              <div class="text-center">
+                <div class="text-xs text-slate-500 uppercase font-bold">Prolong.</div>
+                <div id="pred-draw" class="font-bold text-base text-slate-500">—</div>
+              </div>
+              <div class="text-right">
+                <div class="text-xs text-slate-500 uppercase font-bold">Extérieur</div>
+                <div id="pred-away-win" class="font-extrabold text-2xl text-slate-800">—</div>
+              </div>
+            </div>
+            <div class="flex h-3 rounded-full overflow-hidden mt-2 bg-slate-200" role="img" aria-label="Probabilités de victoire">
+              <div id="bar-home" class="bg-red-600 transition-all" style="width:50%"></div>
+              <div id="bar-away" class="bg-slate-800 transition-all" style="width:50%"></div>
+            </div>
+          </div>
 
-      <div class="bg-white border rounded-xl p-3">
-        <div class="font-bold text-sm mb-2">📊 Statistiques équipe</div>
-        <div class="text-xs text-slate-600">
-          ${teamStats ? `${teamStats.goals_per_game} buts/match sur ${teamStats.games} matchs` : "Statistiques indisponibles."}
+          <div class="flex flex-wrap justify-between gap-2 text-sm font-semibold text-slate-600">
+            <div>Buts attendus : <span id="pred-xg" class="text-slate-900">—</span></div>
+            <div>Over 5.5 : <span id="pred-over55" class="text-red-600">—</span></div>
+          </div>
+
+          <div class="text-center text-xs text-slate-500">
+            Score statistique le plus probable : <span id="pred-score" class="font-bold text-slate-800">—</span>
+          </div>
         </div>
-      </div>
-    </div>
 
-    <div class="bg-white border rounded-xl p-3">
-      <div class="font-bold text-sm mb-2">💎 Analyse de value</div>
-      ${[
-        ["Victoire domicile",values.home_win],
-        ["Victoire extérieur",values.away_win],
-        ["Over 5.5",values.over_5_5]
-      ].map(([label,v]) => `
-        <div class="flex justify-between gap-2 text-xs py-1 border-b last:border-0">
-          <span>${label}</span>
-          <span class="${v?.value_detected ? "text-green-700 font-bold" : "text-slate-500"}">
-            ${v?.value_detected ? "Value potentielle" : (v?.message || "Non calculée")}
-            ${v?.value_percent != null ? ` (${v.value_percent}%)` : ""}
-          </span>
+        <div class="flex bg-slate-200 p-1 rounded-xl" role="tablist" aria-label="Type de statistique">
+          <button id="tab-type-goals" class="flex-1 py-3 text-sm font-bold rounded-lg bg-white shadow-sm" role="tab" aria-selected="true">🎯 Buteurs</button>
+          <button id="tab-type-assists" class="flex-1 py-3 text-sm font-bold rounded-lg text-slate-600" role="tab" aria-selected="false">🤝 Passeurs</button>
         </div>
-      `).join("")}
-    </div>
 
-    <div class="text-xs text-slate-400 text-center">
-      Version ${escapeHtml(currentMatchData.version || "39.7")} • Le score sécurité mesure la régularité des données, jamais une garantie de résultat.
-    </div>`;
-}
+        <div class="flex bg-slate-100 p-1 rounded-xl border border-slate-200" role="tablist" aria-label="Équipe">
+          <button id="btn-home" class="flex-1 py-3 text-sm font-bold rounded-lg bg-red-600 text-white" role="tab" aria-selected="true">Domicile</button>
+          <button id="btn-away" class="flex-1 py-3 text-sm font-bold rounded-lg text-slate-600" role="tab" aria-selected="false">Extérieur</button>
+        </div>
 
-/* ---------------- Historique ---------------- */
+        <div id="safe-top5" class="space-y-2"></div>
+        <div id="players-container" class="space-y-3" aria-live="polite"></div>
+        <div id="extra-data" class="space-y-3"></div>
+      </div>
+    </section>
+  </div>
 
-function openHistory() {
-  $("history-modal").classList.remove("hidden");
-  $("history-modal").classList.add("flex");
-  document.body.classList.add("overflow-hidden");
-  loadHistory();
-}
+  <!-- Fenêtre Historique -->
+  <div id="history-modal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm hidden items-center justify-center p-2 sm:p-4 z-50">
+    <section class="bg-white w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[94vh]">
+      <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center gap-3">
+        <div class="font-extrabold text-xl sm:text-2xl">📜 Historique</div>
+        <button id="close-history" aria-label="Fermer" class="text-slate-400 hover:text-slate-800 text-3xl leading-none">&times;</button>
+      </div>
+      <div class="p-3 sm:p-4 flex-1 overflow-y-auto modal-scroll space-y-3">
+        <div id="metrics-box"></div>
+        <div id="history-list" class="space-y-2"></div>
+      </div>
+    </section>
+  </div>
 
-function closeHistory() {
-  $("history-modal").classList.add("hidden");
-  $("history-modal").classList.remove("flex");
-  document.body.classList.remove("overflow-hidden");
-}
+  <script>
+    "use strict";
 
-function formatParis(iso) {
-  try {
-    return new Date(iso).toLocaleString("fr-FR", {
-      timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"
-    });
-  } catch (e) {
-    return String(iso || "");
-  }
-}
+    const $ = (id) => document.getElementById(id);
+    const datePicker = $("date-picker");
 
-async function loadMetrics() {
-  const box = $("metrics-box");
-  box.innerHTML = "";
-  try {
-    const response = await fetch("/api/metrics");
-    if (!response.ok) return;
-    const m = await response.json();
-    const n = m.games_evaluated || 0;
-    const acc = m.match_winner_home && m.match_winner_home.accuracy_pct != null
-      ? `${m.match_winner_home.accuracy_pct} %` : "—";
-    const safe = m.safe_top5_goals && m.safe_top5_goals.hit_rate_pct != null
-      ? `${m.safe_top5_goals.hit_rate_pct} % (${m.safe_top5_goals.n} joueurs)` : "—";
-    box.innerHTML = `
-      <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 space-y-1">
-        <div class="font-bold text-sm text-slate-900">📈 Résultats du modèle</div>
-        <div>Matchs évalués : <b>${n}</b></div>
-        <div>Vainqueur trouvé : <b>${escapeHtml(acc)}</b></div>
-        <div>Top 5 sécurité (buteurs) marque : <b>${escapeHtml(safe)}</b></div>
-        ${n < 30 ? '<div class="text-slate-400">Trop peu de matchs pour conclure : ces chiffres sont encore très bruités.</div>' : ""}
-      </div>`;
-  } catch (e) { /* les métriques sont facultatives */ }
-}
+    let currentMatchData = null;
+    let activeModalTab = "home";
+    let activeStatType = "goals";
+    let selectedMatch = null;
+    let matchesRequestController = null;
+    let predictionRequestController = null;
 
-async function loadHistory() {
-  const list = $("history-list");
-  list.innerHTML = '<div class="text-center py-8 text-slate-500">Chargement…</div>';
-  loadMetrics();
-  try {
-    const response = await fetch("/api/history?limit=50");
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || `Erreur HTTP ${response.status}`);
+    const today = new Date();
+    const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 10);
 
-    if (!data.predictions || !data.predictions.length) {
-      list.innerHTML = '<div class="text-center py-8 text-slate-500 bg-slate-50 rounded-xl">Aucune prédiction enregistrée pour le moment.</div>';
-      return;
+    datePicker.value = localDate;
+
+    const TEAM_NAMES = {
+      ANA: "Anaheim Ducks",
+      BOS: "Boston Bruins",
+      BUF: "Buffalo Sabres",
+      CGY: "Calgary Flames",
+      CAR: "Carolina Hurricanes",
+      CHI: "Chicago Blackhawks",
+      COL: "Colorado Avalanche",
+      CBJ: "Columbus Blue Jackets",
+      DAL: "Dallas Stars",
+      DET: "Detroit Red Wings",
+      EDM: "Edmonton Oilers",
+      FLA: "Florida Panthers",
+      LAK: "Los Angeles Kings",
+      MIN: "Minnesota Wild",
+      MTL: "Montréal Canadiens",
+      NSH: "Nashville Predators",
+      NJD: "New Jersey Devils",
+      NYI: "New York Islanders",
+      NYR: "New York Rangers",
+      OTT: "Ottawa Senators",
+      PHI: "Philadelphia Flyers",
+      PIT: "Pittsburgh Penguins",
+      SJS: "San Jose Sharks",
+      SEA: "Seattle Kraken",
+      STL: "St. Louis Blues",
+      TBL: "Tampa Bay Lightning",
+      TOR: "Toronto Maple Leafs",
+      UTA: "Utah Mammoth",
+      VAN: "Vancouver Canucks",
+      VGK: "Vegas Golden Knights",
+      WSH: "Washington Capitals",
+      WPG: "Winnipeg Jets"
+    };
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[c]));
     }
 
-    list.innerHTML = "";
-    data.predictions.forEach(row => {
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "w-full text-left bg-white border border-slate-200 rounded-xl p-3 hover:border-red-300 transition";
-      item.innerHTML = `
-        <div class="flex items-center justify-between gap-2">
-          <div class="font-extrabold text-base sm:text-lg text-slate-900">${escapeHtml(row.match_name)}</div>
-          <div class="text-xs text-slate-400 shrink-0">${escapeHtml(formatParis(row.created_at))}</div>
+    function normalizeText(value, fallback = "—") {
+      const text = String(value ?? "").trim();
+      return text.length ? text : fallback;
+    }
+
+    function setStatus(message, bad = false) {
+      const el = $("api-status");
+      el.textContent = message;
+      el.className = "mb-4 text-xs text-center " + (bad ? "text-red-600 font-semibold" : "text-slate-500");
+    }
+
+    function setRefreshBusy(isBusy) {
+      const button = $("refresh-btn");
+      if (!button) return;
+
+      button.disabled = isBusy;
+      button.textContent = isBusy ? "…" : "⟳";
+      button.classList.toggle("opacity-50", isBusy);
+      button.classList.toggle("cursor-not-allowed", isBusy);
+    }
+
+    function isValidNhlDate(dateStr) {
+      if (!dateStr) return false;
+      const d = new Date(dateStr + "T00:00:00");
+      return !Number.isNaN(d.getTime());
+    }
+
+    function setActiveButton(id, active) {
+      const el = $(id);
+      if (!el) return;
+
+      el.className = active
+        ? "flex-1 py-3 text-sm font-bold rounded-lg bg-red-600 text-white shadow-sm"
+        : "flex-1 py-3 text-sm font-bold rounded-lg text-slate-600 hover:text-slate-900";
+
+      el.setAttribute("aria-selected", String(active));
+    }
+
+    function setStatTabState(type) {
+      const goalsActive = type === "goals";
+      const goalsBtn = $("tab-type-goals");
+      const assistsBtn = $("tab-type-assists");
+
+      goalsBtn.className = goalsActive
+        ? "flex-1 py-3 text-sm font-bold rounded-lg bg-white shadow-sm"
+        : "flex-1 py-3 text-sm font-bold rounded-lg text-slate-600";
+
+      assistsBtn.className = !goalsActive
+        ? "flex-1 py-3 text-sm font-bold rounded-lg bg-white shadow-sm"
+        : "flex-1 py-3 text-sm font-bold rounded-lg text-slate-600";
+
+      goalsBtn.setAttribute("aria-selected", String(goalsActive));
+      assistsBtn.setAttribute("aria-selected", String(!goalsActive));
+    }
+
+    function openModal() {
+      $("modal").classList.remove("hidden");
+      $("modal").classList.add("flex");
+      document.body.classList.add("overflow-hidden");
+    }
+
+    function closeModal() {
+      $("modal").classList.add("hidden");
+      $("modal").classList.remove("flex");
+      document.body.classList.remove("overflow-hidden");
+    }
+
+    function openHistory() {
+      $("history-modal").classList.remove("hidden");
+      $("history-modal").classList.add("flex");
+      document.body.classList.add("overflow-hidden");
+      loadHistory();
+    }
+
+    function closeHistory() {
+      $("history-modal").classList.add("hidden");
+      $("history-modal").classList.remove("flex");
+      document.body.classList.remove("overflow-hidden");
+    }
+
+    function teamLabel(name, abbr) {
+      const safeName = String(name ?? "").trim();
+      if (safeName.length > 3) return safeName;
+      return TEAM_NAMES[abbr] || abbr || "";
+    }
+
+    function stateLabel(match) {
+      const text = String(match.game_state || "NHL");
+      const matchTime = text.match(/^([0-9]{2}):[0-9]{2}$/);
+      if (matchTime && Number(matchTime[1]) < 7) return "🌙 " + text;
+      return text;
+    }
+
+    function displayError(message) {
+      $("safe-top5").innerHTML = "";
+      $("players-container").innerHTML = `
+        <div class="rounded-xl border border-red-200 bg-red-50 p-5 text-center">
+          <div class="text-3xl mb-2">⚠️</div>
+          <div class="font-bold text-red-700">${escapeHtml(message)}</div>
+          <button id="retry-prediction" class="mt-4 rounded-lg bg-red-600 px-5 py-3 text-white font-bold">Réessayer</button>
         </div>
-        <div class="text-xs text-slate-600 mt-1">
-          Victoire dom. <b>${row.home_win ?? "—"}%</b> • ext. <b>${row.away_win ?? "—"}%</b>
-          • Buts attendus <b>${row.home_xg ?? "—"} - ${row.away_xg ?? "—"}</b>
-        </div>`;
-      item.addEventListener("click", () => openHistoryDetail(row));
-      list.appendChild(item);
+      `;
+
+      const retryBtn = $("retry-prediction");
+      if (retryBtn) {
+        retryBtn.addEventListener("click", () => {
+          if (selectedMatch) {
+            fetchPrediction(selectedMatch.home_abbr, selectedMatch.away_abbr);
+          }
+        });
+      }
+    }
+
+    function setupImageFallback(img, fallbackSrc) {
+      if (!img) return;
+      img.addEventListener("error", () => {
+        img.src = fallbackSrc;
+        img.onerror = null;
+      });
+    }
+
+    function resetPredictionModal(title = "Analyse du match") {
+      $("modal-teams").textContent = title;
+      ["pred-home-win", "pred-draw", "pred-away-win", "pred-xg", "pred-over55", "pred-score"].forEach((id) => {
+        $(id).textContent = "…";
+      });
+
+      setWinBar(50, 50);
+      $("players-container").innerHTML = '<div class="text-center py-10 text-slate-500">Calcul des probabilités et récupération des statistiques NHL…</div>';
+      $("extra-data").innerHTML = "";
+      $("safe-top5").innerHTML = "";
+      setActiveButton("btn-home", true);
+      setActiveButton("btn-away", false);
+    }
+
+    function setWinBar(home, away) {
+      const h = Number(home);
+      const a = Number(away);
+      const total = (h + a) || 100;
+
+      $("bar-home").style.width = `${(h / total) * 100}%`;
+      $("bar-away").style.width = `${(a / total) * 100}%`;
+    }
+
+    async function loadNhlMatches(date) {
+      if (!isValidNhlDate(date)) {
+        setStatus("Date invalide", true);
+        return;
+      }
+
+      if (matchesRequestController) matchesRequestController.abort();
+
+      matchesRequestController = new AbortController();
+
+      $("loading").classList.remove("hidden");
+      $("matches-container").innerHTML = "";
+      $("no-matches").classList.add("hidden");
+      setStatus("Récupération du calendrier NHL…");
+      setRefreshBusy(true);
+
+      try {
+        const response = await fetch(`/api/matches/nhl?date=${encodeURIComponent(date)}`, {
+          signal: matchesRequestController.signal
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.detail || `Erreur HTTP ${response.status}`);
+        }
+
+        $("loading").classList.add("hidden");
+
+        if (!Array.isArray(data.matches) || data.matches.length === 0) {
+          $("no-matches").textContent = "Aucun match NHL trouvé pour cette date.";
+          $("no-matches").classList.remove("hidden");
+        } else {
+          data.matches.forEach(renderMatchCard);
+        }
+
+        setStatus(`${data.matches?.length ?? 0} match(s) trouvé(s) • Fuseau Europe/Paris`);
+      } catch (err) {
+        if (err.name === "AbortError") return;
+
+        $("loading").classList.add("hidden");
+        $("no-matches").textContent = `Impossible de charger le calendrier : ${escapeHtml(err.message)}`;
+        $("no-matches").classList.remove("hidden");
+        setStatus("Erreur de connexion à l'API", true);
+      } finally {
+        setRefreshBusy(false);
+      }
+    }
+
+    function renderMatchCard(match) {
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "w-full bg-white border border-slate-200 rounded-2xl p-3 sm:p-5 flex items-center justify-between gap-1 sm:gap-3 shadow-sm hover:shadow-md hover:border-red-300 transition text-left";
+
+      const home = escapeHtml(teamLabel(match.home_team, match.home_abbr));
+      const away = escapeHtml(teamLabel(match.away_team, match.away_abbr));
+
+      const homeLogo = encodeURI(String(match.home_logo || `https://assets.nhle.com/logos/nhl/svg/${match.home_abbr}_light.svg`));
+      const awayLogo = encodeURI(String(match.away_logo || `https://assets.nhle.com/logos/nhl/svg/${match.away_abbr}_light.svg`));
+      const safeHomeFallback = `https://assets.nhle.com/logos/nhl/svg/${match.home_abbr || "nhl"}_light.svg`;
+      const safeAwayFallback = `https://assets.nhle.com/logos/nhl/svg/${match.away_abbr || "nhl"}_light.svg`;
+
+      card.innerHTML = `
+        <div class="flex flex-col items-center gap-1 flex-1 min-w-0 text-center">
+          <img src="${homeLogo}" alt="" class="w-16 h-16 sm:w-24 sm:h-24 object-contain" loading="lazy">
+          <span class="font-extrabold text-slate-900 text-sm sm:text-xl leading-tight break-words">${home}</span>
+        </div>
+
+        <div class="px-1 sm:px-3 text-center shrink-0">
+          <span class="text-xs sm:text-sm bg-slate-100 text-slate-700 px-2 py-1.5 rounded-full font-bold border whitespace-nowrap">${escapeHtml(stateLabel(match))}</span>
+          <div class="text-[10px] text-slate-400 mt-1">ANALYSER</div>
+        </div>
+
+        <div class="flex flex-col items-center gap-1 flex-1 min-w-0 text-center">
+          <img src="${awayLogo}" alt="" class="w-16 h-16 sm:w-24 sm:h-24 object-contain" loading="lazy">
+          <span class="font-extrabold text-slate-900 text-sm sm:text-xl leading-tight break-words">${away}</span>
+        </div>
+      `;
+
+      const homeImg = card.querySelectorAll("img")[0];
+      const awayImg = card.querySelectorAll("img")[1];
+      setupImageFallback(homeImg, safeHomeFallback);
+      setupImageFallback(awayImg, safeAwayFallback);
+
+      card.addEventListener("click", () => {
+        if (!match.home_abbr || !match.away_abbr) {
+          setStatus("Codes des équipes absents du calendrier.", true);
+          return;
+        }
+
+        selectedMatch = match;
+        fetchPrediction(match.home_abbr, match.away_abbr);
+      });
+
+      $("matches-container").appendChild(card);
+    }
+
+    function showPrediction(data) {
+      currentMatchData = data;
+
+      if (!data || typeof data !== "object") {
+        displayError("Prédiction incomplète pour ce match.");
+        return;
+      }
+
+      const p = data.match_prediction || {};
+      const homeWin = normalizeText(p.home_win_pct_value, 50);
+      const awayWin = normalizeText(p.away_win_pct_value, 50);
+
+      setWinBar(homeWin, awayWin);
+      $("pred-home-win").textContent = normalizeText(p.home_win_pct);
+      $("pred-draw").textContent = normalizeText(p.draw_or_ot_pct);
+      $("pred-away-win").textContent = normalizeText(p.away_win_pct);
+      $("pred-xg").textContent = `${normalizeText(p.expected_goals_home)} - ${normalizeText(p.expected_goals_away)}`;
+      $("pred-over55").textContent = normalizeText(p.over_5_5_goals_prob);
+      $("pred-score").textContent = p.most_likely_score
+        ? `${normalizeText(p.most_likely_score.home)} - ${normalizeText(p.most_likely_score.away)}`
+        : "—";
+
+      renderPlayers();
+      renderExtraData();
+    }
+
+    async function fetchPrediction(homeTeam, awayTeam) {
+      if (!homeTeam || !awayTeam || ["DOMICILE", "EXTERIEUR", "HOME", "AWAY"].includes(String(homeTeam).toUpperCase())) {
+        openModal();
+        displayError("Équipe non reconnue. Sélectionne un vrai match dans le calendrier.");
+        return;
+      }
+
+      if (predictionRequestController) predictionRequestController.abort();
+      predictionRequestController = new AbortController();
+
+      activeModalTab = "home";
+      activeStatType = "goals";
+      currentMatchData = null;
+
+      $("modal-teams").textContent = `${teamLabel(selectedMatch && selectedMatch.home_team, homeTeam)} vs ${teamLabel(selectedMatch && selectedMatch.away_team, awayTeam)}`;
+
+      resetPredictionModal($("modal-teams").textContent);
+
+      setStatTabState("goals");
+      setActiveButton("btn-home", true);
+      setActiveButton("btn-away", false);
+      openModal();
+
+      try {
+        const response = await fetch("/predict/goalscorers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            league: "NHL",
+            home_team: homeTeam,
+            away_team: awayTeam
+          }),
+          signal: predictionRequestController.signal
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.detail || `Erreur HTTP ${response.status}`);
+        }
+
+        if (!data || !data.match_prediction) {
+          throw new Error("Prédiction incomplète pour ce match.");
+        }
+
+        showPrediction(data);
+      } catch (err) {
+        if (err.name === "AbortError") return;
+        displayError(err.message || "Erreur lors de la récupération des données.");
+      }
+    }
+
+    function switchStatType(type) {
+      activeStatType = type;
+      setStatTabState(type);
+      renderPlayers();
+    }
+
+    function switchModalTab(tab) {
+      activeModalTab = tab;
+      setActiveButton("btn-home", tab === "home");
+      setActiveButton("btn-away", tab === "away");
+      renderPlayers();
+      renderExtraData();
+    }
+
+    function renderPlayers() {
+      if (!currentMatchData) return;
+
+      const key = activeStatType === "goals"
+        ? (activeModalTab === "home" ? "top_goalscorers_home" : "top_goalscorers_away")
+        : (activeModalTab === "home" ? "top_playmakers_home" : "top_playmakers_away");
+
+      const safeKey = activeStatType === "goals"
+        ? (activeModalTab === "home" ? "safe_top5_goals_home" : "safe_top5_goals_away")
+        : (activeModalTab === "home" ? "safe_top5_assists_home" : "safe_top5_assists_away");
+
+      const players = currentMatchData[key] || [];
+      const safePlayers = currentMatchData[safeKey] || [];
+
+      const container = $("players-container");
+      const safeContainer = $("safe-top5");
+
+      const confidenceBadge = (p) => {
+        const level = p.confidence;
+        const dot = level === "high" ? "bg-green-500" : level === "medium" ? "bg-amber-500" : "bg-red-500";
+        const label = level === "high" ? "Confiance élevée" : level === "medium" ? "Confiance moyenne" : "Risqué";
+        return `
+          <span class="inline-flex items-center gap-1 text-xs font-semibold text-slate-600">
+            <span class="inline-block w-2.5 h-2.5 rounded-full ${dot}"></span>${label}
+          </span>
+        `;
+      };
+
+      safeContainer.innerHTML = safePlayers.length ? `
+        <section class="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+          <div class="flex items-center justify-between gap-2 mb-2">
+            <div class="font-extrabold text-emerald-900">🛡️ TOP 5 — MODE SÉCURITÉ</div>
+            <span class="text-[11px] font-bold text-emerald-800">39.7</span>
+          </div>
+
+          <div class="text-xs text-emerald-800 mb-2">Tri selon probabilité estimée, régularité et forme récente.</div>
+
+          ${safePlayers.map((p, i) => `
+            <div class="flex items-center justify-between gap-2 py-2 border-t border-emerald-100">
+              <div class="min-w-0">
+                <div class="font-bold text-sm text-slate-900">${i + 1}. ${escapeHtml(p.name)}</div>
+                <div class="text-xs text-slate-600">${escapeHtml(p.stats)} • Score sécurité ${p.security_score ?? "—"}/100</div>
+              </div>
+              <div class="text-right shrink-0">
+                <div class="font-extrabold text-red-700">${escapeHtml(p.prob)}</div>
+                ${confidenceBadge(p)}
+              </div>
+            </div>
+          `).join("")}
+        </section>
+      ` : "";
+
+      if (!players.length) {
+        container.innerHTML = '<div class="text-center py-8 text-slate-500 bg-slate-50 rounded-xl">Aucune statistique joueur disponible pour cette équipe pour le moment.</div>';
+        return;
+      }
+
+      container.innerHTML =
+        '<div class="text-xs font-bold uppercase text-slate-500 pt-1">Tous les profils classés par probabilité</div>' +
+        players.map((p) => `
+          <article class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+            <div class="min-w-0">
+              <div class="font-bold text-sm text-slate-900">
+                ${escapeHtml(p.name)}
+                <span class="text-xs bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded">${escapeHtml(p.pos)}</span>
+              </div>
+
+              <div class="text-[13px] text-slate-500 mt-1">
+                ${escapeHtml(p.stats)} • <span class="font-semibold text-slate-700">${escapeHtml(p.momentum)}</span>
+              </div>
+
+              ${p.recent_form ? `
+                <div class="text-xs text-slate-500 mt-1">
+                  10 derniers matchs : ${p.recent_form.goals} buts, ${p.recent_form.assists} passes, ${p.recent_form.shots} tirs
+                </div>
+              ` : ""}
+
+              <div class="mt-1">
+                ${confidenceBadge(p)}
+                <span class="text-[11px] text-slate-500">Score ${p.security_score ?? "—"}/100</span>
+              </div>
+            </div>
+
+            <div class="text-right shrink-0">
+              <div class="text-red-600 font-extrabold text-base">${escapeHtml(p.prob)}</div>
+              <div class="text-xs text-slate-500">Cote juste ${p.odds ? escapeHtml(p.odds) : "—"}</div>
+            </div>
+
+            <div class="w-full h-1.5 rounded-full bg-slate-200" role="img" aria-label="Probabilité ${escapeHtml(p.prob)}">
+              <div class="h-1.5 rounded-full bg-red-500" style="width:${Math.max(0, Math.min(100, Number(p.probability_value) || 0))}%"></div>
+            </div>
+          </article>
+        `).join("");
+    }
+
+    function renderExtraData() {
+      if (!currentMatchData) return;
+
+      const goalies = activeModalTab === "home"
+        ? currentMatchData.goalies_home
+        : currentMatchData.goalies_away;
+
+      const teamStats = currentMatchData.team_stats?.[activeModalTab];
+      const values = currentMatchData.value_analysis || {};
+
+      $("extra-data").innerHTML = `
+        <div class="grid sm:grid-cols-2 gap-3">
+          <div class="bg-white border rounded-xl p-3">
+            <div class="font-bold text-sm mb-2">🥅 Gardiens de l'équipe</div>
+            ${(goalies || []).length
+              ? goalies.map((g) => `
+                  <div class="text-xs py-1 border-b last:border-0">
+                    ${escapeHtml(g.name)} — % arrêts : ${g.save_pct ?? "—"} • GAA : ${g.gaa ?? "—"}
+                  </div>
+                `).join("")
+              : '<div class="text-xs text-slate-500">Données gardiens indisponibles.</div>'}
+          </div>
+
+          <div class="bg-white border rounded-xl p-3">
+            <div class="font-bold text-sm mb-2">📊 Statistiques équipe</div>
+            <div class="text-xs text-slate-600">
+              ${teamStats ? `${teamStats.goals_per_game} buts/match sur ${teamStats.games} matchs` : "Statistiques indisponibles."}
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-white border rounded-xl p-3">
+          <div class="font-bold text-sm mb-2">💎 Analyse de value</div>
+          ${[
+            ["Victoire domicile", values.home_win],
+            ["Victoire extérieur", values.away_win],
+            ["Over 5.5", values.over_5_5]
+          ].map(([label, v]) => `
+            <div class="flex justify-between gap-2 text-xs py-1 border-b last:border-0">
+              <span>${label}</span>
+              <span class="${v?.value_detected ? "text-green-700 font-bold" : "text-slate-500"}">
+                ${v?.value_detected ? "Value potentielle" : (v?.message || "Non calculée")}
+                ${v?.value_percent != null ? ` (${v.value_percent}%)` : ""}
+              </span>
+            </div>
+          `).join("")}
+        </div>
+
+        <div class="text-xs text-slate-400 text-center">
+          Version ${escapeHtml(currentMatchData.version || "39.7")} • Le score sécurité mesure la régularité des données, jamais une garantie de résultat.
+        </div>
+      `;
+    }
+
+    function formatParis(iso) {
+      try {
+        return new Date(iso).toLocaleString("fr-FR", {
+          timeZone: "Europe/Paris",
+          day: "2-digit",
+          month: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit"
+        });
+      } catch {
+        return String(iso || "");
+      }
+    }
+
+    async function loadMetrics() {
+      const box = $("metrics-box");
+      box.innerHTML = "";
+
+      try {
+        const response = await fetch("/api/metrics");
+        if (!response.ok) return;
+
+        const m = await response.json();
+        const n = m.games_evaluated || 0;
+        const acc = m.match_winner_home && m.match_winner_home.accuracy_pct != null
+          ? `${m.match_winner_home.accuracy_pct} %`
+          : "—";
+
+        const safe = m.safe_top5_goals && m.safe_top5_goals.hit_rate_pct != null
+          ? `${m.safe_top5_goals.hit_rate_pct} % (${m.safe_top5_goals.n} joueurs)`
+          : "—";
+
+        box.innerHTML = `
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 space-y-1">
+            <div class="font-bold text-sm text-slate-900">📈 Résultats du modèle</div>
+            <div>Matchs évalués : <b>${n}</b></div>
+            <div>Vainqueur trouvé : <b>${escapeHtml(acc)}</b></div>
+            <div>Top 5 sécurité (buteurs) marque : <b>${escapeHtml(safe)}</b></div>
+            ${n < 30 ? '<div class="text-slate-400">Trop peu de matchs pour conclure : ces chiffres sont encore très bruités.</div>' : ""}
+          </div>
+        `;
+      } catch {
+        // facultatif
+      }
+    }
+
+    async function loadHistory() {
+      const list = $("history-list");
+      list.innerHTML = '<div class="text-center py-8 text-slate-500">Chargement…</div>';
+      loadMetrics();
+
+      try {
+        const response = await fetch("/api/history?limit=50");
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.detail || `Erreur HTTP ${response.status}`);
+        }
+
+        if (!data.predictions || !data.predictions.length) {
+          list.innerHTML = '<div class="text-center py-8 text-slate-500 bg-slate-50 rounded-xl">Aucune prédiction enregistrée pour le moment.</div>';
+          return;
+        }
+
+        list.innerHTML = "";
+        data.predictions.forEach((row) => {
+          const item = document.createElement("button");
+          item.type = "button";
+          item.className = "w-full text-left bg-white border border-slate-200 rounded-xl p-3 hover:border-red-300 transition";
+          item.innerHTML = `
+            <div class="flex items-center justify-between gap-2">
+              <div class="font-extrabold text-base sm:text-lg text-slate-900">${escapeHtml(row.match_name)}</div>
+              <div class="text-xs text-slate-400 shrink-0">${escapeHtml(formatParis(row.created_at))}</div>
+            </div>
+            <div class="text-xs text-slate-600 mt-1">
+              Victoire dom. <b>${row.home_win ?? "—"}%</b> • ext. <b>${row.away_win ?? "—"}%</b>
+              • Buts attendus <b>${row.home_xg ?? "—"} - ${row.away_xg ?? "—"}</b>
+            </div>
+          `;
+
+          item.addEventListener("click", () => openHistoryDetail(row));
+          list.appendChild(item);
+        });
+      } catch (err) {
+        list.innerHTML = `<div class="text-center py-8 text-red-600">Impossible de charger l'historique : ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    async function openHistoryDetail(row) {
+      closeHistory();
+      selectedMatch = null;
+      activeModalTab = "home";
+      activeStatType = "goals";
+      currentMatchData = null;
+
+      $("modal-teams").textContent = row.match_name;
+      ["pred-home-win", "pred-draw", "pred-away-win", "pred-xg", "pred-over55", "pred-score"].forEach((id) => {
+        $(id).textContent = "…";
+      });
+
+      setWinBar(50, 50);
+      $("players-container").innerHTML = '<div class="text-center py-10 text-slate-500">Chargement de la prédiction…</div>';
+      $("extra-data").innerHTML = "";
+      $("safe-top5").innerHTML = "";
+      setActiveButton("btn-home", true);
+      setActiveButton("btn-away", false);
+      setStatTabState("goals");
+      openModal();
+
+      try {
+        const response = await fetch(`/api/history/${encodeURIComponent(row.id)}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.detail || `Erreur HTTP ${response.status}`);
+        }
+
+        showPrediction(data);
+      } catch (err) {
+        displayError(err.message || "Impossible de charger cette prédiction.");
+      }
+    }
+
+    $("close-modal").addEventListener("click", closeModal);
+    $("close-history").addEventListener("click", closeHistory);
+    $("history-btn").addEventListener("click", openHistory);
+
+    $("modal").addEventListener("click", (e) => {
+      if (e.target === $("modal")) closeModal();
     });
-  } catch (err) {
-    list.innerHTML = `<div class="text-center py-8 text-red-600">Impossible de charger l'historique : ${escapeHtml(err.message)}</div>`;
-  }
-}
 
-async function openHistoryDetail(row) {
-  closeHistory();
-  selectedMatch = null;
-  activeModalTab = "home";
-  activeStatType = "goals";
-  currentMatchData = null;
-  $("modal-teams").textContent = row.match_name;
-  ["pred-home-win","pred-draw","pred-away-win","pred-xg","pred-over55","pred-score"].forEach(id => { $(id).textContent = "…"; });
-  setWinBar(50, 50);
-  $("players-container").innerHTML = '<div class="text-center py-10 text-slate-500">Chargement de la prédiction…</div>';
-  $("extra-data").innerHTML = "";
-  $("safe-top5").innerHTML = "";
-  setActiveButton("btn-home", true);
-  setActiveButton("btn-away", false);
-  openModal();
-  try {
-    const response = await fetch(`/api/history/${encodeURIComponent(row.id)}`);
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || `Erreur HTTP ${response.status}`);
-    showPrediction(data);
-  } catch (err) {
-    displayError(err.message || "Impossible de charger cette prédiction.");
-  }
-}
+    $("history-modal").addEventListener("click", (e) => {
+      if (e.target === $("history-modal")) closeHistory();
+    });
 
-$("close-modal").addEventListener("click", closeModal);
-$("close-history").addEventListener("click", closeHistory);
-$("history-btn").addEventListener("click", openHistory);
+    $("tab-type-goals").addEventListener("click", () => switchStatType("goals"));
+    $("tab-type-assists").addEventListener("click", () => switchStatType("assists"));
+    $("btn-home").addEventListener("click", () => switchModalTab("home"));
+    $("btn-away").addEventListener("click", () => switchModalTab("away"));
+    $("refresh-btn").addEventListener("click", () => loadNhlMatches(datePicker.value));
 
-$("modal").addEventListener("click", e => {
-  if (e.target === $("modal")) closeModal();
-});
-$("history-modal").addEventListener("click", e => {
-  if (e.target === $("history-modal")) closeHistory();
-});
+    datePicker.addEventListener("change", (e) => {
+      if (!isValidNhlDate(e.target.value)) {
+        setStatus("Date invalide", true);
+        return;
+      }
+      loadNhlMatches(e.target.value);
+    });
 
-$("tab-type-goals").addEventListener("click", () => switchStatType("goals"));
-$("tab-type-assists").addEventListener("click", () => switchStatType("assists"));
-$("btn-home").addEventListener("click", () => switchModalTab("home"));
-$("btn-away").addEventListener("click", () => switchModalTab("away"));
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        closeModal();
+        closeHistory();
+      }
+    });
 
-$("refresh-btn").addEventListener("click", () => loadNhlMatches(datePicker.value));
-
-datePicker.addEventListener("change", e => loadNhlMatches(e.target.value));
-
-document.addEventListener("keydown", e => {
-  if (e.key === "Escape") { closeModal(); closeHistory(); }
-});
-
-loadNhlMatches(datePicker.value);
-</script>
+    loadNhlMatches(datePicker.value);
+  </script>
 </body>
 </html>
