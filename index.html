@@ -13,14 +13,14 @@
 </head>
 <body class="bg-slate-100 text-slate-900 min-h-screen font-sans">
 
-<header class="bg-white border-b border-slate-200 py-4 px-4 sm:px-6 sticky top-0 z-40 shadow-sm">
-  <div class="max-w-4xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-3">
-    <h1 class="text-lg sm:text-xl font-extrabold tracking-wide text-red-600">🏒 <span class="text-slate-900">NHL GoalScorer Analytics</span> <span class="text-xs text-slate-400">39.7 • MODE SÉCURITÉ</span></h1>
-    <div class="flex flex-wrap items-center justify-center gap-2">
-      <label for="date-picker" class="text-xs font-bold text-slate-500 uppercase">Date :</label>
-      <input type="date" id="date-picker" class="bg-slate-50 px-3 py-2 rounded-lg border border-slate-300 text-sm">
-      <button id="refresh-btn" class="bg-slate-900 text-white px-3 py-2 rounded-lg text-sm font-bold">Actualiser</button>
-      <button id="history-btn" class="bg-white text-slate-900 px-3 py-2 rounded-lg text-sm font-bold border border-slate-300">📜 Historique</button>
+<header class="bg-white border-b border-slate-200 py-2 px-3 sm:px-6 sticky top-0 z-40 shadow-sm">
+  <div class="max-w-4xl mx-auto flex items-center justify-between gap-2">
+    <h1 class="text-lg sm:text-xl font-extrabold tracking-wide text-red-600 leading-tight min-w-0">🏒 <span class="text-slate-900">NHL<span class="hidden sm:inline"> GoalScorer Analytics</span></span> <span class="hidden sm:inline text-xs text-slate-400">39.72 • MODE SÉCURITÉ</span></h1>
+    <div class="flex items-center gap-1.5 shrink-0">
+      <label for="date-picker" class="sr-only">Date</label>
+      <input type="date" id="date-picker" class="bg-slate-50 px-2 py-2 rounded-lg border border-slate-300 text-sm">
+      <button id="refresh-btn" aria-label="Actualiser" class="bg-slate-900 text-white w-10 h-10 rounded-lg text-lg font-bold leading-none">⟳</button>
+      <button id="history-btn" aria-label="Historique" class="bg-white text-slate-900 w-10 h-10 rounded-lg text-lg border border-slate-300 leading-none">📜</button>
     </div>
   </div>
 </header>
@@ -46,10 +46,16 @@
   <div class="p-3 sm:p-4 flex-1 overflow-y-auto modal-scroll space-y-4">
     <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 sm:p-4 space-y-3">
       <div class="text-xs font-bold text-slate-500 uppercase">Pronostics & buts attendus (xG)</div>
-      <div class="grid grid-cols-3 gap-2 text-center">
-        <div class="bg-white p-3 rounded-lg border"><div class="text-[10px] text-slate-400 uppercase font-bold">Victoire dom.</div><div id="pred-home-win" class="font-extrabold text-lg">—</div></div>
-        <div class="bg-white p-3 rounded-lg border"><div class="text-[10px] text-slate-400 uppercase font-bold">Nul / OT</div><div id="pred-draw" class="font-extrabold text-lg">—</div></div>
-        <div class="bg-white p-3 rounded-lg border"><div class="text-[10px] text-slate-400 uppercase font-bold">Victoire ext.</div><div id="pred-away-win" class="font-extrabold text-lg">—</div></div>
+      <div>
+        <div class="flex justify-between items-end">
+          <div><div class="text-xs text-slate-500 uppercase font-bold">Domicile</div><div id="pred-home-win" class="font-extrabold text-2xl text-red-600">—</div></div>
+          <div class="text-center"><div class="text-xs text-slate-500 uppercase font-bold">Prolong.</div><div id="pred-draw" class="font-bold text-base text-slate-500">—</div></div>
+          <div class="text-right"><div class="text-xs text-slate-500 uppercase font-bold">Extérieur</div><div id="pred-away-win" class="font-extrabold text-2xl text-slate-800">—</div></div>
+        </div>
+        <div class="flex h-3 rounded-full overflow-hidden mt-2 bg-slate-200" role="img" aria-label="Probabilités de victoire">
+          <div id="bar-home" class="bg-red-600 transition-all" style="width:50%"></div>
+          <div id="bar-away" class="bg-slate-800 transition-all" style="width:50%"></div>
+        </div>
       </div>
       <div class="flex flex-wrap justify-between gap-2 text-sm font-semibold text-slate-600">
         <div>Buts attendus : <span id="pred-xg" class="text-slate-900">—</span></div>
@@ -185,6 +191,12 @@ function teamLabel(name, abbr) {
   return TEAM_NAMES[abbr] || abbr || "";
 }
 
+function stateLabel(match) {
+  const text = String(match.game_state || "NHL");
+  const m = text.match(/^(\d{2}):\d{2}$/);
+  return m && Number(m[1]) < 7 ? "🌙 " + text : text;
+}
+
 function renderMatchCard(match) {
   const card = document.createElement("button");
   card.type = "button";
@@ -204,8 +216,8 @@ function renderMatchCard(match) {
     </div>
 
     <div class="px-1 sm:px-3 text-center shrink-0">
-      <span class="text-xs sm:text-sm bg-slate-100 text-slate-700 px-2 py-1.5 rounded-full font-bold border whitespace-nowrap">${escapeHtml(match.game_state || "NHL")}</span>
-      <div class="text-[9px] text-slate-400 mt-1">ANALYSER</div>
+      <span class="text-xs sm:text-sm bg-slate-100 text-slate-700 px-2 py-1.5 rounded-full font-bold border whitespace-nowrap">${escapeHtml(stateLabel(match))}</span>
+      <div class="text-[10px] text-slate-400 mt-1">ANALYSER</div>
     </div>
 
     <div class="flex flex-col items-center gap-1 flex-1 min-w-0 text-center">
@@ -247,10 +259,18 @@ function setActiveButton(id, active) {
 }
 
 /* Remplit la fenêtre d'analyse avec une prédiction (en direct ou issue de l'historique) */
+function setWinBar(home, away) {
+  const h = Number(home), a = Number(away);
+  const total = (h + a) || 100;
+  $("bar-home").style.width = (h / total * 100) + "%";
+  $("bar-away").style.width = (a / total * 100) + "%";
+}
+
 function showPrediction(data) {
   currentMatchData = data;
   const p = data.match_prediction || {};
 
+  setWinBar(p.home_win_pct_value ?? 50, p.away_win_pct_value ?? 50);
   $("pred-home-win").textContent = p.home_win_pct ?? "—";
   $("pred-draw").textContent = p.draw_or_ot_pct ?? "—";
   $("pred-away-win").textContent = p.away_win_pct ?? "—";
@@ -282,6 +302,7 @@ async function fetchPrediction(homeTeam, awayTeam) {
     $(id).textContent = "…";
   });
 
+  setWinBar(50, 50);
   $("players-container").innerHTML = '<div class="text-center py-10 text-slate-500">Calcul des probabilités et récupération des statistiques NHL…</div>';
   $("extra-data").innerHTML = "";
   $("safe-top5").innerHTML = "";
@@ -355,29 +376,31 @@ function renderPlayers() {
   const container = $("players-container");
   const safeContainer = $("safe-top5");
 
-  const badgeClass = level =>
-    level === "high" ? "bg-green-100 text-green-800" :
-    level === "medium" ? "bg-amber-100 text-amber-800" :
-    "bg-red-100 text-red-800";
+  const confidenceBadge = p => {
+    const level = p.confidence;
+    const dot = level === "high" ? "bg-green-500" : level === "medium" ? "bg-amber-500" : "bg-red-500";
+    const label = level === "high" ? "Confiance élevée" : level === "medium" ? "Confiance moyenne" : "Risqué";
+    return `<span class="inline-flex items-center gap-1 text-xs font-semibold text-slate-600"><span class="inline-block w-2.5 h-2.5 rounded-full ${dot}"></span>${label}</span>`;
+  };
 
   safeContainer.innerHTML = safePlayers.length ? `
     <section class="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
       <div class="flex items-center justify-between gap-2 mb-2">
         <div class="font-extrabold text-emerald-900">🛡️ TOP 5 — MODE SÉCURITÉ</div>
-        <span class="text-[10px] font-bold text-emerald-800">39.7</span>
+        <span class="text-[11px] font-bold text-emerald-800">39.7</span>
       </div>
 
-      <div class="text-[11px] text-emerald-800 mb-2">Tri selon probabilité estimée, régularité et forme récente.</div>
+      <div class="text-xs text-emerald-800 mb-2">Tri selon probabilité estimée, régularité et forme récente.</div>
 
       ${safePlayers.map((p,i) => `
         <div class="flex items-center justify-between gap-2 py-2 border-t border-emerald-100">
           <div class="min-w-0">
             <div class="font-bold text-sm text-slate-900">${i+1}. ${escapeHtml(p.name)}</div>
-            <div class="text-[11px] text-slate-600">${escapeHtml(p.stats)} • Score sécurité ${p.security_score ?? "—"}/100</div>
+            <div class="text-xs text-slate-600">${escapeHtml(p.stats)} • Score sécurité ${p.security_score ?? "—"}/100</div>
           </div>
           <div class="text-right shrink-0">
             <div class="font-extrabold text-red-700">${escapeHtml(p.prob)}</div>
-            <span class="inline-block rounded-full px-2 py-1 text-[10px] font-bold ${badgeClass(p.confidence)}">${escapeHtml(p.confidence_label || "À surveiller")}</span>
+            ${confidenceBadge(p)}
           </div>
         </div>
       `).join("")}
@@ -391,31 +414,34 @@ function renderPlayers() {
   container.innerHTML =
     '<div class="text-xs font-bold uppercase text-slate-500 pt-1">Tous les profils classés par probabilité</div>' +
     players.map(p => `
-      <article class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex items-center justify-between gap-3">
+      <article class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div class="min-w-0">
           <div class="font-bold text-sm text-slate-900">
             ${escapeHtml(p.name)}
             <span class="text-xs bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded">${escapeHtml(p.pos)}</span>
           </div>
 
-          <div class="text-xs text-slate-500 mt-1">
+          <div class="text-[13px] text-slate-500 mt-1">
             ${escapeHtml(p.stats)} • <span class="font-semibold text-slate-700">${escapeHtml(p.momentum)}</span>
           </div>
 
           ${p.recent_form ? `
-            <div class="text-[11px] text-slate-500 mt-1">
+            <div class="text-xs text-slate-500 mt-1">
               10 derniers matchs : ${p.recent_form.goals} buts, ${p.recent_form.assists} passes, ${p.recent_form.shots} tirs
             </div>` : ""}
 
           <div class="mt-1">
-            <span class="inline-block rounded-full px-2 py-1 text-[10px] font-bold ${badgeClass(p.confidence)}">${escapeHtml(p.confidence_label || "Profil non évalué")}</span>
-            <span class="text-[10px] text-slate-500">Score ${p.security_score ?? "—"}/100</span>
+            ${confidenceBadge(p)}
+            <span class="text-[11px] text-slate-500">Score ${p.security_score ?? "—"}/100</span>
           </div>
         </div>
 
         <div class="text-right shrink-0">
           <div class="text-red-600 font-extrabold text-base">${escapeHtml(p.prob)}</div>
           <div class="text-xs text-slate-500">Cote juste ${p.odds ? escapeHtml(p.odds) : "—"}</div>
+        </div>
+        <div class="w-full h-1.5 rounded-full bg-slate-200" role="img" aria-label="Probabilité ${escapeHtml(p.prob)}">
+          <div class="h-1.5 rounded-full bg-red-500" style="width:${Math.max(0, Math.min(100, Number(p.probability_value) || 0))}%"></div>
         </div>
       </article>
     `).join("");
@@ -469,7 +495,7 @@ function renderExtraData() {
       `).join("")}
     </div>
 
-    <div class="text-[11px] text-slate-400 text-center">
+    <div class="text-xs text-slate-400 text-center">
       Version ${escapeHtml(currentMatchData.version || "39.7")} • Le score sécurité mesure la régularité des données, jamais une garantie de résultat.
     </div>`;
 }
@@ -544,7 +570,7 @@ async function loadHistory() {
       item.innerHTML = `
         <div class="flex items-center justify-between gap-2">
           <div class="font-extrabold text-base sm:text-lg text-slate-900">${escapeHtml(row.match_name)}</div>
-          <div class="text-[11px] text-slate-400 shrink-0">${escapeHtml(formatParis(row.created_at))}</div>
+          <div class="text-xs text-slate-400 shrink-0">${escapeHtml(formatParis(row.created_at))}</div>
         </div>
         <div class="text-xs text-slate-600 mt-1">
           Victoire dom. <b>${row.home_win ?? "—"}%</b> • ext. <b>${row.away_win ?? "—"}%</b>
@@ -566,6 +592,7 @@ async function openHistoryDetail(row) {
   currentMatchData = null;
   $("modal-teams").textContent = row.match_name;
   ["pred-home-win","pred-draw","pred-away-win","pred-xg","pred-over55","pred-score"].forEach(id => { $(id).textContent = "…"; });
+  setWinBar(50, 50);
   $("players-container").innerHTML = '<div class="text-center py-10 text-slate-500">Chargement de la prédiction…</div>';
   $("extra-data").innerHTML = "";
   $("safe-top5").innerHTML = "";
