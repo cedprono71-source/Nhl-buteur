@@ -11,7 +11,6 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-from contextlib import asynccontextmanager
 from typing import Optional
 
 import requests
@@ -23,7 +22,8 @@ from scipy.stats import nbinom, poisson
 
 # ============================================================
 # NHL GOALSCORER ANALYTICS - VERSION 39.72
-# Compatible avec Render : main:app
+# Adapté pour Vercel : plus de boucle de fond au démarrage.
+# Les mises à jour automatiques passent par GitHub Actions.
 # ============================================================
 
 VERSION = "39.72"
@@ -942,20 +942,8 @@ def perform_sync():
     return {"status": status, "teams_updated": success, "errors": errors,
             "message": message, "time": datetime.now(timezone.utc).isoformat()}
 
-async def background_nhl_sync():
-    while True:
-        try:
-            logger.info("AUTOPILOT : synchronisation NHL")
-            await asyncio.to_thread(perform_sync)
-            await asyncio.to_thread(get_elo_table)
-            logger.info("AUTOPILOT : synchronisation terminée")
-            summary = await asyncio.to_thread(evaluate_pending, 100)
-            logger.info("AUTOPILOT : évaluation %s", summary)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("Erreur synchronisation automatique")
-        await asyncio.sleep(43200)
+# (La boucle automatique background_nhl_sync a été retirée : Vercel ne
+#  supporte pas les tâches de fond. Utiliser GitHub Actions + run_cron_job().)
 
 # ---------------------- EVALUATION --------------------------
 
@@ -1164,22 +1152,14 @@ def run_cron_job():
 
 # ---------------------- FASTAPI -----------------------------
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+try:
     init_database()
-    logger.info("NHL IA VERSION %s démarrée", VERSION)
-    task = asyncio.create_task(background_nhl_sync())
-    yield
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
+except Exception:
+    logger.exception("Initialisation base de données")
 
 app = FastAPI(
     title="NHL GoalScorer Analytics API", version=VERSION,
-    description="Analyse NHL : buteurs, passeurs, gardiens, xG, probabilités et historique.",
-    lifespan=lifespan
+    description="Analyse NHL : buteurs, passeurs, gardiens, xG, probabilités et historique."
 )
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_credentials=False,
