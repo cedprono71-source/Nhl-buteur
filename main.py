@@ -1,4 +1,5 @@
 import os
+import glob
 import json
 import time
 import math
@@ -16,7 +17,7 @@ from typing import Optional
 import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 from scipy.stats import nbinom, poisson
 
@@ -1168,9 +1169,16 @@ app.add_middleware(
 
 @app.get("/", response_class=HTMLResponse)
 def serve_home():
+    liens = ('<link rel="manifest" href="/manifest.json">'
+             '<link rel="icon" type="image/png" href="/icone-512.png">'
+             '<link rel="apple-touch-icon" href="/icone-512.png">'
+             '<meta name="theme-color" content="#0b1220">')
     try:
         with open("index.html", "r", encoding="utf-8") as f:
-            return f.read()
+            page = f.read()
+        if "<head>" in page:
+            return page.replace("<head>", "<head>" + liens, 1)
+        return liens + page
     except FileNotFoundError:
         return f"""<!doctype html><html lang="fr"><meta charset="utf-8">
         <title>NHL IA {VERSION}</title><body style="font-family:Arial;padding:30px">
@@ -1285,6 +1293,27 @@ def football_matches(date: Optional[str] = None):
         "date": date, "matches": [], "status": "football_not_configured",
         "message": "Le module football n'est pas encore raccordé à une source de données."
     }
+
+# ---------------------- ICÔNE ET MANIFEST --------------------
+
+def _fichier_icone():
+    trouves = glob.glob("t*chargement*.png")
+    return trouves[0] if trouves else None
+
+@app.get("/icone-512.png", include_in_schema=False)
+def icone_512():
+    f = _fichier_icone()
+    if not f:
+        return JSONResponse({"erreur": "icone introuvable"}, status_code=404)
+    return FileResponse(f)
+
+@app.get("/manifest.json", include_in_schema=False)
+def manifest():
+    return JSONResponse({
+        "name": "NHL-IA", "short_name": "NHL-IA",
+        "start_url": "/", "display": "standalone",
+        "background_color": "#0b1220", "theme_color": "#0b1220",
+        "icons": [{"src": "/icone-512.png", "sizes": "512x512", "type": "image/png"}]})
 
 if __name__ == "__main__":
     import uvicorn
