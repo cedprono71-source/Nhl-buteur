@@ -4,100 +4,103 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#080e1b">
+<meta name="theme-color" content="#050b18">
 <title>NHL GoalScorer Analytics 39.73</title>
 <script src="https://cdn.tailwindcss.com"></script>
 
 <style>
 :root {
-  color-scheme: dark;
-  --bg:#080e1b;
-  --panel:#111c30;
-  --panel2:#17243a;
-  --border:#293c59;
-  --red:#ef3349;
-  --muted:#94a3b8;
+ color-scheme:dark;
+ --bg:#050b18;
+ --panel:#0b172b;
+ --panel2:#102440;
+ --border:#164b85;
+ --blue:#087cff;
+ --cyan:#00c8ff;
+ --red:#ef263d;
+ --muted:#9eb4d0;
 }
-
 * {
-  scrollbar-width:thin;
-  scrollbar-color:#34445e #080e1b;
+ scrollbar-width:thin;
+ scrollbar-color:#1675c9 #050b18;
 }
-
 body {
-  background:var(--bg)!important;
-  color:#f1f5f9!important;
+ background:radial-gradient(ellipse at 50% 0%,#123a70 0%,transparent 48%),linear-gradient(180deg,#07152b,#030914 75%)!important;
+ color:#f1f7ff!important;
 }
-
 header {
-  background:#0d1729!important;
-  border-color:var(--border)!important;
-  box-shadow:0 5px 25px #0005!important;
+ background:linear-gradient(110deg,#071326,#102b50,#071326)!important;
+ border-color:#087cff!important;
+ box-shadow:0 4px 25px #007bff55!important;
 }
-
-header h1 {color:var(--red)!important}
-
-main {padding-top:24px!important}
-
-#api-status,#loading,#no-matches {color:var(--muted)!important}
+header h1 {color:#00bfff!important;text-shadow:0 0 15px #008cff88}
+main {padding-top:22px!important}
+#api-status,#loading,#no-matches {color:#a9c4e6!important}
 
 #matches-container > button {
-  background:linear-gradient(145deg,#15243b,#0e192b)!important;
-  border:1px solid var(--border)!important;
-  border-radius:18px!important;
-  color:#f8fafc!important;
-  padding:18px 12px!important;
-  box-shadow:0 8px 25px #0003!important;
+ background:linear-gradient(145deg,#102746,#071326)!important;
+ border:1px solid #155b9e!important;
+ border-radius:20px!important;
+ color:#f8fbff!important;
+ padding:19px 12px!important;
+ box-shadow:0 5px 20px #0008,inset 0 0 15px #087cff12!important;
+ overflow:hidden;
 }
-
 #matches-container > button:hover {
-  border-color:var(--red)!important;
-  transform:translateY(-2px);
+ border-color:#00bfff!important;
+ box-shadow:0 0 20px #087cff66!important;
+ transform:translateY(-3px);
 }
-
+#matches-container img {filter:drop-shadow(0 3px 8px #0008)}
 #matches-container button span.bg-slate-100 {
-  background:#253650!important;
-  color:white!important;
+ background:#123d6a!important;
+ color:#fff!important;
+ border-color:#168cff!important;
 }
+#matches-container button .text-red-500 {color:#00bfff!important}
+#matches-container button .text-slate-400 {color:#8daacb!important}
 
 input[type=date] {
-  background:#17243a!important;
-  color:white!important;
-  border-color:var(--border)!important;
+ background:#102440!important;
+ color:white!important;
+ border:1px solid #1764a5!important;
 }
-
-#refresh-btn {background:var(--red)!important}
-
+#refresh-btn {
+ background:linear-gradient(135deg,#ef263d,#a90025)!important;
+ box-shadow:0 0 12px #ef263d66;
+}
 #history-btn {
-  background:#17243a!important;
-  color:white!important;
-  border-color:var(--border)!important;
+ background:#102440!important;
+ color:white!important;
+ border:1px solid #1764a5!important;
 }
 
-#modal,#history-modal {background:#020617dd!important}
-
+#modal,#history-modal {
+ background:#020817ef!important;
+ backdrop-filter:blur(12px);
+}
 #modal section,#history-modal section {
-  background:#0d1729!important;
-  border:1px solid var(--border);
+ background:linear-gradient(160deg,#0c1d35,#050d1c)!important;
+ border:1px solid #087cff!important;
+ box-shadow:0 0 35px #007bff35!important;
+ border-radius:22px!important;
 }
-
 #modal section > div:first-child,
 #history-modal section > div:first-child {
-  background:#142239!important;
-  border-color:var(--border)!important;
+ background:linear-gradient(110deg,#102d50,#09172c)!important;
+ border-color:#1764a5!important;
 }
-
 #modal-teams {color:white!important}
+#modal .border,#history-modal .border {border-color:#194b7b!important}
 
 #modal .bg-slate-50,
 #history-modal .bg-slate-50 {
-  background:#15243a!important;
-  border-color:var(--border)!important;
-  color:#f1f5f9!important;
+ background:#102440!important;
+ border-color:#19548b!important;
+ color:#f1f5f9!important;
 }
-
-#modal .bg-slate-100 {background:#1c2c45!important}
-#modal .bg-slate-200 {background:#263650!important}
+#modal .bg-slate-100 {background:#142b49!important}
+#modal .bg-slate-200 {background:#1a3658!important}
 
 #modal .text-slate-900,
 #modal .text-slate-800,
@@ -106,63 +109,80 @@ input[type=date] {
 #modal .text-slate-600,
 #modal .text-slate-500,
 #history-modal .text-slate-600,
-#history-modal .text-slate-500 {color:#a9b8cc!important}
+#history-modal .text-slate-500 {color:#a9c0df!important}
 
-#players-container article,
-#extra-data > div,
-#history-list > button {
-  background:#142239!important;
-  border:1px solid var(--border)!important;
-  border-radius:15px!important;
-  color:#f1f5f9!important;
-}
+#pred-home-win {color:#ff4055!important}
+#pred-away-win {color:#00bfff!important}
+#pred-home-win,#pred-away-win {text-shadow:0 0 12px #168cff55}
 
-#players-container article {padding:16px!important}
-
-#safe-top5 section {
-  background:#102c2b!important;
-  border-color:#17665a!important;
-}
-
-#safe-top5 section * {color:#d1fae5!important}
+#bar-home {background:linear-gradient(90deg,#ff1736,#d90025)!important}
+#bar-away {background:linear-gradient(90deg,#087cff,#00c8ff)!important}
 
 #tab-type-goals[aria-selected=true],
 #tab-type-assists[aria-selected=true],
 #btn-home[aria-selected=true],
 #btn-away[aria-selected=true] {
-  background:var(--red)!important;
-  color:white!important;
+ background:linear-gradient(110deg,#ed1837,#a90027)!important;
+ color:white!important;
+ box-shadow:0 0 14px #ef263d66;
 }
 
-#close-modal,#close-history {color:#cbd5e1!important}
+#players-container article,
+#extra-data > div,
+#history-list > button {
+ background:linear-gradient(145deg,#102440,#09172a)!important;
+ border:1px solid #1a548a!important;
+ border-radius:16px!important;
+ color:#f1f5f9!important;
+ box-shadow:0 4px 15px #0005;
+}
+#players-container article {padding:16px!important}
+#players-container article .bg-slate-700 {background:#19416b!important}
+#players-container article .bg-red-500 {
+ background:linear-gradient(90deg,#ef263d,#00aaff)!important;
+}
+
+#safe-top5 section {
+ background:linear-gradient(145deg,#07372f,#09251f)!important;
+ border:1px solid #10b981!important;
+ border-radius:19px!important;
+ box-shadow:0 0 18px #10b98122;
+ padding:16px!important;
+}
+#safe-top5 section * {color:#d1fae5!important}
+#safe-top5 section .text-red-400 {color:#ff4055!important}
+#safe-top5 section .bg-amber-500 {background:#f59e0b!important}
+#safe-top5 section .border-t {border-color:#176653!important}
+
+#extra-data .text-green-400 {color:#34d399!important}
+#close-modal,#close-history {color:#c5e5ff!important}
+#history-list > button:hover {border-color:#00bfff!important}
 
 button {transition:.2s ease}
-
 button:focus-visible,input:focus-visible {
-  outline:3px solid #fb7185;
-  outline-offset:3px;
+ outline:3px solid #00bfff;
+ outline-offset:3px;
 }
-
 .modal-scroll {overscroll-behavior:contain}
 
 @media(max-width:480px) {
-  main {padding:12px!important}
-  #matches-container > button {padding:12px 7px!important}
-  #matches-container img {width:58px;height:58px}
-  #modal section,#history-modal section {border-radius:18px}
+ main {padding:12px!important}
+ #matches-container > button {padding:15px 7px!important}
+ #matches-container img {width:62px;height:62px}
+ #modal section,#history-modal section {border-radius:18px!important}
+ #modal .p-3 {padding:12px!important}
 }
 </style>
 </head>
 
 <body class="bg-slate-100 text-slate-900 min-h-screen font-sans">
 
-<header class="border-b py-2 px-3 sm:px-6 sticky top-0 z-40">
+<header class="border-b py-3 px-3 sm:px-6 sticky top-0 z-40">
 <div class="max-w-4xl mx-auto flex items-center justify-between gap-2">
 <h1 class="text-lg sm:text-xl font-extrabold tracking-wide leading-tight min-w-0">
 🏒 <span class="text-white">NHL<span class="hidden sm:inline"> GoalScorer Analytics</span></span>
 <span class="hidden sm:inline text-xs text-slate-400">39.73 • MODE SÉCURITÉ</span>
 </h1>
-
 <div class="flex items-center gap-1.5 shrink-0">
 <label for="date-picker" class="sr-only">Date</label>
 <input type="date" id="date-picker" class="px-2 py-2 rounded-lg border text-sm">
@@ -179,10 +199,8 @@ button:focus-visible,input:focus-visible {
 <div id="no-matches" class="hidden text-center py-10 font-medium"></div>
 </main>
 
-<!-- ANALYSE MATCH -->
 <div id="modal" class="fixed inset-0 backdrop-blur-sm hidden items-center justify-center p-2 sm:p-4 z-50">
 <section class="w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[94vh]">
-
 <div class="p-4 border-b flex justify-between items-center gap-3">
 <div class="min-w-0">
 <div class="text-xs text-slate-400 font-bold uppercase">Analyse du match</div>
@@ -195,12 +213,11 @@ button:focus-visible,input:focus-visible {
 
 <div class="border rounded-xl p-3 sm:p-4 space-y-3">
 <div class="text-xs font-bold text-slate-400 uppercase">Pronostics & buts attendus (xG)</div>
-
 <div>
 <div class="flex justify-between items-end">
 <div>
 <div class="text-xs uppercase font-bold">Domicile</div>
-<div id="pred-home-win" class="font-extrabold text-2xl text-red-500">—</div>
+<div id="pred-home-win" class="font-extrabold text-2xl">—</div>
 </div>
 <div class="text-center">
 <div class="text-xs uppercase font-bold">Prolong.</div>
@@ -211,25 +228,22 @@ button:focus-visible,input:focus-visible {
 <div id="pred-away-win" class="font-extrabold text-2xl">—</div>
 </div>
 </div>
-
 <div class="flex h-3 rounded-full overflow-hidden mt-2 bg-slate-700" role="img" aria-label="Probabilités de victoire">
-<div id="bar-home" class="bg-red-600 transition-all" style="width:50%"></div>
-<div id="bar-away" class="bg-slate-800 transition-all" style="width:50%"></div>
+<div id="bar-home" class="transition-all" style="width:50%"></div>
+<div id="bar-away" class="transition-all" style="width:50%"></div>
 </div>
 </div>
-
 <div class="flex flex-wrap justify-between gap-2 text-sm font-semibold">
 <div>Buts attendus : <span id="pred-xg">—</span></div>
 <div>Over 5.5 : <span id="pred-over55" class="text-red-500">—</span></div>
 </div>
-
 <div class="text-center text-xs">
 Score statistique le plus probable :
 <span id="pred-score" class="font-bold">—</span>
 </div>
 </div>
 
-<div class="flex p-1 rounded-xl" style="background:#263650" role="tablist">
+<div class="flex p-1 rounded-xl" style="background:#102440" role="tablist">
 <button id="tab-type-goals" class="flex-1 py-3 text-sm font-bold rounded-lg" role="tab" aria-selected="true">🎯 Buteurs</button>
 <button id="tab-type-assists" class="flex-1 py-3 text-sm font-bold rounded-lg" role="tab" aria-selected="false">🤝 Passeurs</button>
 </div>
@@ -242,20 +256,16 @@ Score statistique le plus probable :
 <div id="safe-top5" class="space-y-2"></div>
 <div id="players-container" class="space-y-3" aria-live="polite"></div>
 <div id="extra-data" class="space-y-3"></div>
-
 </div>
 </section>
 </div>
 
-<!-- HISTORIQUE -->
 <div id="history-modal" class="fixed inset-0 backdrop-blur-sm hidden items-center justify-center p-2 sm:p-4 z-50">
 <section class="w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[94vh]">
-
 <div class="p-4 border-b flex justify-between items-center gap-3">
 <div class="font-extrabold text-xl sm:text-2xl">📜 Historique</div>
 <button id="close-history" aria-label="Fermer" class="text-3xl">&times;</button>
 </div>
-
 <div class="p-3 sm:p-4 flex-1 overflow-y-auto modal-scroll space-y-3">
 <div id="metrics-box"></div>
 <div id="history-list" class="space-y-2"></div>
@@ -308,7 +318,7 @@ function normalizeText(value,fallback="—") {
 function setStatus(message,bad=false) {
  const el=$("api-status");
  el.textContent=message;
- el.className="mb-4 text-xs text-center "+(bad?"text-red-500 font-semibold":"text-slate-400");
+ el.className="mb-4 text-xs text-center "+(bad?"text-red-400 font-semibold":"text-slate-400");
 }
 
 function setRefreshBusy(isBusy) {
@@ -489,13 +499,11 @@ function renderMatchCard(match) {
  <img src="${homeLogo}" alt="" class="w-16 h-16 sm:w-24 sm:h-24 object-contain" loading="lazy">
  <span class="font-extrabold text-sm sm:text-xl leading-tight break-words">${home}</span>
  </div>
-
  <div class="px-1 sm:px-3 text-center shrink-0">
  <span class="text-xs sm:text-sm px-2 py-1.5 rounded-full font-bold border whitespace-nowrap">${escapeHtml(stateLabel(match))}</span>
  <div class="text-[10px] text-slate-400 mt-2 tracking-widest">ANALYSER</div>
  <div class="text-red-500 text-xl font-bold">VS</div>
  </div>
-
  <div class="flex flex-col items-center gap-1 flex-1 min-w-0 text-center">
  <img src="${awayLogo}" alt="" class="w-16 h-16 sm:w-24 sm:h-24 object-contain" loading="lazy">
  <span class="font-extrabold text-sm sm:text-xl leading-tight break-words">${away}</span>
@@ -637,7 +645,7 @@ function renderPlayers() {
  <div class="flex items-center justify-between gap-2 py-2 border-t border-emerald-900">
  <div class="min-w-0">
  <div class="font-bold text-sm">${i+1}. ${escapeHtml(p.name)}</div>
- <div class="text-xs"> ${escapeHtml(p.stats)} • Score sécurité ${p.security_score??"—"}/100</div>
+ <div class="text-xs">${escapeHtml(p.stats)} • Score sécurité ${p.security_score??"—"}/100</div>
  </div>
  <div class="text-right shrink-0">
  <div class="font-extrabold text-red-400">${escapeHtml(p.prob)}</div>
