@@ -516,4 +516,51 @@
     }
 
     async function fetchPrediction(homeTeam, awayTeam) {
-      if (!home
+      if (!homeTeam || !awayTeam || ["DOMICILE", "EXTERIEUR", "HOME", "AWAY"].includes(String(homeTeam).toUpperCase())) {
+        openModal();
+        displayError("Équipe non reconnue. Sélectionne un vrai match dans le calendrier.");
+        return;
+      }
+
+      if (predictionRequestController) predictionRequestController.abort();
+      predictionRequestController = new AbortController();
+
+      activeStatType = "goals";
+      currentMatchData = null;
+
+      $("modal-teams").textContent = `${teamLabel(selectedMatch && selectedMatch.home_team, homeTeam)} vs ${teamLabel(selectedMatch && selectedMatch.away_team, awayTeam)}`;
+
+      resetPredictionModal($("modal-teams").textContent);
+      setModalLogos(selectedMatch);
+
+      setStatTabState("goals");
+      openModal();
+
+      try {
+        const response = await fetch("/predict/goalscorers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            league: "NHL",
+            home_team: homeTeam,
+            away_team: awayTeam
+          }),
+          signal: predictionRequestController.signal
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.detail || `Erreur HTTP ${response.status}`);
+        }
+
+        if (!data || !data.match_prediction) {
+          throw new Error("Prédiction incomplète pour ce match.");
+        }
+
+        showPrediction(data);
+      } catch (err) {
+        if (err.name === "AbortError") return;
+        displayError(err.message || "Erreur lors de la récupération des données.");
+      }
+    }
