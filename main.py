@@ -4,7 +4,6 @@ import json
 import time
 import math
 import sqlite3
-import asyncio
 import logging
 import re
 import secrets
@@ -22,12 +21,12 @@ from pydantic import BaseModel, Field
 from scipy.stats import nbinom, poisson
 
 # ============================================================
-# NHL GOALSCORER ANALYTICS - VERSION 39.72
+# NHL GOALSCORER ANALYTICS - VERSION 39.73
 # Adapté pour Vercel : plus de boucle de fond au démarrage.
 # Les mises à jour automatiques passent par GitHub Actions.
 # ============================================================
 
-VERSION = "39.72"
+VERSION = "39.73"
 DB_FILE = os.getenv("DB_FILE", "nhl_history.db")
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()   # si défini : PostgreSQL externe (ex. Neon), sinon SQLite local
 USE_PG = bool(DATABASE_URL)
@@ -861,6 +860,41 @@ def build_match_prediction(req):
     save_prediction(result)
     return result
 
+# ---------------------- VERDICT ✅/❌ ------------------------
+
+def _is_shootout(game):
+    """Le vainqueur d'une séance de tirs au but reçoit +1 but au score final : on l'exclut du total de buts."""
+    outcome = (game.get("gameOutcome") or {}).get("lastPeriodType")
+    period = (game.get("periodDescriptor") or {}).get("periodType")
+    return "SO" in (outcome, period)
+
+def evaluate_pick(home_win, away_win, over_pct, home_score, away_score, shootout=False):
+    """Compare un pronostic au résultat. None = pas encore de résultat."""
+    if home_score is None or away_score is None:
+        return {"winner_ok": None, "over_ok": None, "total_goals": None}
+    winner_ok = None
+    if home_win is not None and away_win is not None:
+        winner_ok = (float(home_win) >= float(away_win)) == (home_score > away_score)
+    total = int(home_score) + int(away_score) - (1 if shootout else 0)
+    over_ok = None if over_pct is None else ((float(over_pct) >= 50) == (total >= 6))
+    return {"winner_ok": winner_ok, "over_ok": over_ok, "total_goals": total}
+
+def _find_prediction_for_match(home_abbr, away_abbr, start_dt):
+    """Dernière prédiction faite AVANT le coup d'envoi (dans les 48 h précédentes), ou None."""
+    try:
+        with db_connection() as db:
+            rows = db.execute(
+                "SELECT id, created_at, home_win, away_win, over_55 FROM predictions "
+                "WHERE home_team=? AND away_team=? ORDER BY id DESC LIMIT 6", (home_abbr, away_abbr)
+            ).fetchall()
+        for row in rows:
+            created = datetime.fromisoformat(row["created_at"])
+            if start_dt - timedelta(hours=48) <= created < start_dt:
+                return dict(row)
+    except Exception:
+        logger.exception("Recherche de prédiction pour %s-%s", home_abbr, away_abbr)
+    return None
+
 # ---------------------- SCHEDULE ----------------------------
 
 def fetch_nhl_score(date_string):
@@ -906,7 +940,18 @@ def get_nhl_matches_for_date(date):
                     display = f'EN DIRECT ({home.get("score", 0)} - {away.get("score", 0)})'
                 else:
                     display = local_dt.strftime("%H:%M")
+                finished = state in ("FINAL", "OFF")
+                hs, as_ = home.get("score"), away.get("score")
+                prediction = _find_prediction_for_match(home.get("abbrev", ""), away.get("abbrev", ""), dt)
+                if prediction:
+                    verdict = evaluate_pick(prediction["home_win"], prediction["away_win"], prediction["over_55"],
+                                            hs if finished else None, as_ if finished else None, _is_shootout(game))
+                    prediction = {"id": prediction["id"], "home_win": prediction["home_win"],
+                                  "away_win": prediction["away_win"], "over_55": prediction["over_55"],
+                                  "winner_ok": verdict["winner_ok"], "over_ok": verdict["over_ok"]}
                 matches.append({
+                    "finished": finished, "home_score": hs if finished else None,
+                    "away_score": as_ if finished else None, "prediction": prediction,
                     "game_id": game_id,
                     "home_team": _localized_team_name(home),
                     "away_team": _localized_team_name(away),
@@ -998,6 +1043,8 @@ def evaluate_pending(limit=50):
             game_id = str(game.get("id"))
             box = nhl_get(f"gamecenter/{game_id}/boxscore")
             players = _parse_boxscore(box)
+            if _is_shootout(game):
+                players["_so"] = 1
             with db_connection() as db:
                 db.execute("""
                     INSERT INTO prediction_outcomes
@@ -1058,8 +1105,8 @@ def compute_metrics():
         if mp.get("home_win_pct_value") is not None:
             winner.append((mp["home_win_pct_value"] / 100, 1 if row["home_score"] > row["away_score"] else 0))
         if mp.get("over_5_5_goals_prob_value") is not None:
-            over55.append((mp["over_5_5_goals_prob_value"] / 100,
-                           1 if row["home_score"] + row["away_score"] >= 6 else 0))
+            total_goals = row["home_score"] + row["away_score"] - (1 if actual.get("_so") else 0)
+            over55.append((mp["over_5_5_goals_prob_value"] / 100, 1 if total_goals >= 6 else 0))
         for side in ("home", "away"):
             for key, metric, idx in (("top_goalscorers", "goal", 0), ("top_playmakers", "assist", 1)):
                 for pl in pred.get(f"{key}_{side}", []) or []:
@@ -1226,18 +1273,46 @@ def get_history(limit: int = 50):
     limit = int(clamp(limit, 1, 500))
     with db_connection() as db:
         rows = db.execute(
-            "SELECT id, created_at, match_name, home_team, away_team, home_xg, away_xg, "
-            "home_win, away_win, over_55 FROM predictions ORDER BY id DESC LIMIT ?", (limit,)
+            "SELECT p.id, p.created_at, p.match_name, p.home_team, p.away_team, p.home_xg, p.away_xg, "
+            "p.home_win, p.away_win, p.over_55, o.home_score, o.away_score, o.players_json "
+            "FROM predictions p LEFT JOIN prediction_outcomes o ON o.prediction_id = p.id "
+            "ORDER BY p.id DESC LIMIT ?", (limit,)
         ).fetchall()
-    return {"count": len(rows), "predictions": [dict(row) for row in rows]}
+    predictions = []
+    for row in rows:
+        item = dict(row)
+        raw = item.pop("players_json", None)
+        shootout = False
+        if raw:
+            try:
+                shootout = bool(json.loads(raw).get("_so"))
+            except ValueError:
+                pass
+        item.update(evaluate_pick(item["home_win"], item["away_win"], item["over_55"],
+                                  item["home_score"], item["away_score"], shootout))
+        predictions.append(item)
+    return {"count": len(predictions), "predictions": predictions}
 
 @app.get("/api/history/{prediction_id}")
 def get_history_detail(prediction_id: int):
     with db_connection() as db:
         row = db.execute("SELECT prediction_json FROM predictions WHERE id=?", (prediction_id,)).fetchone()
+        out = db.execute("SELECT home_score, away_score, players_json FROM prediction_outcomes "
+                         "WHERE prediction_id=?", (prediction_id,)).fetchone() if row else None
     if not row:
         raise HTTPException(status_code=404, detail="Prédiction introuvable")
-    return json.loads(row["prediction_json"])
+    data = json.loads(row["prediction_json"])
+    if out:
+        players = json.loads(out["players_json"])
+        shootout = bool(players.pop("_so", 0))
+        mp = data.get("match_prediction", {})
+        data["outcome"] = {
+            "home_score": out["home_score"], "away_score": out["away_score"], "shootout": shootout,
+            "players": players,
+            **evaluate_pick(mp.get("home_win_pct_value"), mp.get("away_win_pct_value"),
+                            mp.get("over_5_5_goals_prob_value"), out["home_score"], out["away_score"], shootout)
+        }
+    return data
 
 @app.get("/api/predict/auto-sync")
 def auto_sync():
@@ -1260,6 +1335,11 @@ def api_cron(key: Optional[str] = None):
         raise HTTPException(status_code=403, detail="Clé invalide.")
     if JOB_LOCK.locked():
         return {"status": "already_running", **JOB_STATE}
+    if os.getenv("VERCEL"):
+        # Sur Vercel, une tâche lancée en arrière-plan est gelée dès que la réponse part :
+        # on exécute donc tout avant de répondre.
+        run_cron_job()
+        return {"status": "done", **JOB_STATE}
     threading.Thread(target=run_cron_job, daemon=True).start()
     return {"status": "started"}
 
