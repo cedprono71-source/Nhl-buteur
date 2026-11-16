@@ -21,12 +21,12 @@ from pydantic import BaseModel, Field
 from scipy.stats import nbinom, poisson
 
 # ============================================================
-# NHL GOALSCORER ANALYTICS - VERSION 39.73
+# NHL GOALSCORER ANALYTICS - VERSION 39.75
 # Adapté pour Vercel : plus de boucle de fond au démarrage.
 # Les mises à jour automatiques passent par GitHub Actions.
 # ============================================================
 
-VERSION = "39.73"
+VERSION = "39.75"
 DB_FILE = os.getenv("DB_FILE", "nhl_history.db")
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()   # si défini : PostgreSQL externe (ex. Neon), sinon SQLite local
 USE_PG = bool(DATABASE_URL)
@@ -37,6 +37,7 @@ MAX_WORKERS = 8
 CRON_SECRET = os.getenv("CRON_SECRET", "")              # si défini, /api/cron exige ?key=...
 AUTO_PREDICT_HOURS_AHEAD = int(os.getenv("AUTO_PREDICT_HOURS_AHEAD", "10"))
 SYNC_MIN_INTERVAL_HOURS = 6
+DUPLICATE_WINDOW_MIN = 60   # une même affiche n'est enregistrée qu'une fois par heure
 LEAGUE_SH_PCT = 0.105   # % de réussite moyen des tirs (régression vers la moyenne)
 SH_PRIOR_SHOTS = 60      # poids de la moyenne ligue, en tirs
 TOI_FACTOR_RANGE = (0.90, 1.10)
@@ -232,6 +233,13 @@ def save_prediction(result):
     try:
         p = result["match_prediction"]
         with db_connection() as db:
+            last = db.execute(
+                "SELECT created_at FROM predictions WHERE home_team=? AND away_team=? ORDER BY id DESC LIMIT 1",
+                (result["home_team"], result["away_team"])
+            ).fetchone()
+            if last and datetime.now(timezone.utc) - datetime.fromisoformat(last["created_at"]) \
+                    < timedelta(minutes=DUPLICATE_WINDOW_MIN):
+                return  # déjà enregistrée il y a moins d'une heure : on évite les doublons
             db.execute("""
                 INSERT INTO predictions
                 (created_at, match_name, home_team, away_team, home_xg, away_xg,
@@ -1033,12 +1041,26 @@ def evaluate_pending(limit=50):
             FROM predictions p LEFT JOIN prediction_outcomes o ON o.prediction_id = p.id
             WHERE o.prediction_id IS NULL ORDER BY p.id DESC LIMIT ?
         """, (int(clamp(limit, 1, 200)),)).fetchall()
-    evaluated, pending, errors = 0, 0, 0
+    evaluated, pending, expired, errors = 0, 0, 0, 0
     for row in rows:
         try:
             game = _find_final_game(row["home_team"], row["away_team"], row["created_at"])
             if not game:
-                pending += 1
+                age = datetime.now(timezone.utc) - datetime.fromisoformat(row["created_at"])
+                if age > timedelta(hours=72):
+                    # Aucun match terminé trouvé après 3 jours (prédiction faite après le coup d'envoi,
+                    # match reporté...) : on la met de côté pour qu'elle ne bloque plus l'évaluation.
+                    with db_connection() as db:
+                        db.execute("""
+                            INSERT INTO prediction_outcomes
+                            (prediction_id, game_id, evaluated_at, home_score, away_score, players_json)
+                            VALUES (?, 'expired', ?, NULL, NULL, '{}')
+                            ON CONFLICT (prediction_id) DO NOTHING
+                        """, (row["id"], datetime.now(timezone.utc).isoformat()))
+                        db.commit()
+                    expired += 1
+                else:
+                    pending += 1
                 continue
             game_id = str(game.get("id"))
             box = nhl_get(f"gamecenter/{game_id}/boxscore")
@@ -1063,7 +1085,7 @@ def evaluate_pending(limit=50):
         except Exception as exc:
             errors += 1
             logger.warning("Évaluation prédiction %s : %s", row["id"], exc)
-    return {"evaluated": evaluated, "pending": pending, "errors": errors}
+    return {"evaluated": evaluated, "pending": pending, "expired": expired, "errors": errors}
 
 def _calibration(pairs):
     """pairs = [(probabilité 0-1, résultat 0/1)] -> Brier, taux de réussite et calibration par tranche."""
@@ -1090,6 +1112,7 @@ def compute_metrics():
         rows = db.execute("""
             SELECT p.id, p.prediction_json, o.game_id, o.home_score, o.away_score, o.players_json
             FROM prediction_outcomes o JOIN predictions p ON p.id = o.prediction_id
+            WHERE o.game_id <> 'expired'
             ORDER BY p.id DESC
         """).fetchall()
     latest = {}
@@ -1291,7 +1314,15 @@ def get_history(limit: int = 50):
         item.update(evaluate_pick(item["home_win"], item["away_win"], item["over_55"],
                                   item["home_score"], item["away_score"], shootout))
         predictions.append(item)
-    return {"count": len(predictions), "predictions": predictions}
+    kept = []
+    for item in predictions:  # du plus récent au plus ancien
+        created = datetime.fromisoformat(item["created_at"])
+        if any(k["match_name"] == item["match_name"]
+               and abs(datetime.fromisoformat(k["created_at"]) - created) < timedelta(minutes=DUPLICATE_WINDOW_MIN)
+               for k in kept):
+            continue
+        kept.append(item)
+    return {"count": len(kept), "predictions": kept}
 
 @app.get("/api/history/{prediction_id}")
 def get_history_detail(prediction_id: int):
@@ -1302,7 +1333,7 @@ def get_history_detail(prediction_id: int):
     if not row:
         raise HTTPException(status_code=404, detail="Prédiction introuvable")
     data = json.loads(row["prediction_json"])
-    if out:
+    if out and out["home_score"] is not None:
         players = json.loads(out["players_json"])
         shootout = bool(players.pop("_so", 0))
         mp = data.get("match_prediction", {})
