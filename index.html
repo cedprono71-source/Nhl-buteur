@@ -63,11 +63,13 @@
       </div>
       <div class="text-center text-xs text-slate-500">Score statistique le plus probable : <span id="pred-score" class="font-bold text-slate-800">—</span></div>
       <div id="result-line" class="hidden text-center text-sm font-bold text-slate-800"></div>
+      <div id="team-totals" class="hidden border-t border-slate-200 pt-2"></div>
     </div>
 
     <div class="flex bg-slate-200 p-1 rounded-xl">
       <button id="tab-type-goals" class="flex-1 py-3 text-sm font-bold rounded-lg bg-white shadow-sm">🎯 Buteurs</button>
       <button id="tab-type-assists" class="flex-1 py-3 text-sm font-bold rounded-lg text-slate-600">🤝 Passeurs</button>
+      <button id="tab-type-points" class="flex-1 py-3 text-sm font-bold rounded-lg text-slate-600">⭐ Points</button>
     </div>
 
     <div class="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
@@ -271,7 +273,37 @@ function setActiveButton(id, active) {
 /* Remplit la fenêtre d'analyse avec une prédiction (en direct ou issue de l'historique) */
 const mark = ok => ok === true ? "✅" : ok === false ? "❌" : "";
 
-function hideResult() { $("result-line").classList.add("hidden"); }
+function hideResult() {
+  $("result-line").classList.add("hidden");
+  $("team-totals").classList.add("hidden");
+}
+
+function renderTeamTotals(data) {
+  const box = $("team-totals");
+  const t = (data.match_prediction || {}).team_totals;
+  if (!t) { box.classList.add("hidden"); return; }
+  const out = data.outcome;
+  let scores = null;
+  if (out && out.home_score != null) {
+    scores = { home: out.home_score, away: out.away_score };
+    if (out.shootout) { /* le but de la séance de tirs au but ne compte pas */
+      if (scores.home > scores.away) scores.home -= 1; else scores.away -= 1;
+    }
+  }
+  const lines = [["over_1_5", 2, "+1.5"], ["over_2_5", 3, "+2.5"], ["over_3_5", 4, "+3.5"]];
+  const row = (side, label) => `
+    <div class="flex flex-wrap items-center justify-between gap-x-3 py-1">
+      <span class="font-bold text-sm text-slate-800">${escapeHtml(label)}</span>
+      <span class="flex gap-3 text-sm">${lines.map(([k, needed, name]) => {
+        const pv = t[side][k];
+        const m = scores ? mark((pv >= 50) === (scores[side] >= needed)) : "";
+        return `<span><span class="text-xs text-slate-500">${name}</span> <b>${Math.round(pv)}%</b> ${m}</span>`;
+      }).join("")}</span>
+    </div>`;
+  box.innerHTML = '<div class="text-xs font-bold text-slate-500 uppercase mb-1">Total de buts par équipe</div>'
+    + row("home", data.home_team || "Domicile") + row("away", data.away_team || "Extérieur");
+  box.classList.remove("hidden");
+}
 
 function setWinBar(home, away) {
   const h = Number(home), a = Number(away);
@@ -303,6 +335,7 @@ function showPrediction(data) {
     hideResult();
   }
 
+  renderTeamTotals(data);
   renderPlayers();
   renderExtraData();
 }
@@ -362,13 +395,11 @@ async function fetchPrediction(homeTeam, awayTeam) {
 function switchStatType(type) {
   activeStatType = type;
 
-  $("tab-type-goals").className = type === "goals"
-    ? "flex-1 py-3 text-sm font-bold rounded-lg bg-white shadow-sm"
-    : "flex-1 py-3 text-sm font-bold rounded-lg text-slate-600";
-
-  $("tab-type-assists").className = type === "assists"
-    ? "flex-1 py-3 text-sm font-bold rounded-lg bg-white shadow-sm"
-    : "flex-1 py-3 text-sm font-bold rounded-lg text-slate-600";
+  [["goals", "tab-type-goals"], ["assists", "tab-type-assists"], ["points", "tab-type-points"]].forEach(([t, id]) => {
+    $(id).className = type === t
+      ? "flex-1 py-3 text-sm font-bold rounded-lg bg-white shadow-sm"
+      : "flex-1 py-3 text-sm font-bold rounded-lg text-slate-600";
+  });
 
   renderPlayers();
 }
@@ -386,13 +417,13 @@ function switchModalTab(tab) {
 function renderPlayers() {
   if (!currentMatchData) return;
 
-  const key = activeStatType === "goals"
-    ? (activeModalTab === "home" ? "top_goalscorers_home" : "top_goalscorers_away")
-    : (activeModalTab === "home" ? "top_playmakers_home" : "top_playmakers_away");
-
-  const safeKey = activeStatType === "goals"
-    ? (activeModalTab === "home" ? "safe_top5_goals_home" : "safe_top5_goals_away")
-    : (activeModalTab === "home" ? "safe_top5_assists_home" : "safe_top5_assists_away");
+  const side = activeModalTab === "home" ? "home" : "away";
+  const prefix = activeStatType === "goals" ? "top_goalscorers"
+    : activeStatType === "assists" ? "top_playmakers" : "top_points";
+  const safePrefix = activeStatType === "goals" ? "safe_top5_goals"
+    : activeStatType === "assists" ? "safe_top5_assists" : "safe_top5_points";
+  const key = `${prefix}_${side}`;
+  const safeKey = `${safePrefix}_${side}`;
 
   const players = currentMatchData[key] || [];
   const safePlayers = currentMatchData[safeKey] || [];
@@ -404,7 +435,10 @@ function renderPlayers() {
     const out = currentMatchData.outcome;
     const actual = out && out.players ? out.players[String(p.player_id)] : null;
     if (!actual) return "";
-    return actual[activeStatType === "goals" ? 0 : 1] >= 1 ? " ✅" : " ❌";
+    const hit = activeStatType === "goals" ? actual[0] >= 1
+      : activeStatType === "assists" ? actual[1] >= 1
+      : (actual[0] + actual[1]) >= 1;
+    return hit ? " ✅" : " ❌";
   };
 
   const confidenceBadge = p => {
@@ -665,6 +699,7 @@ $("history-modal").addEventListener("click", e => {
 
 $("tab-type-goals").addEventListener("click", () => switchStatType("goals"));
 $("tab-type-assists").addEventListener("click", () => switchStatType("assists"));
+$("tab-type-points").addEventListener("click", () => switchStatType("points"));
 $("btn-home").addEventListener("click", () => switchModalTab("home"));
 $("btn-away").addEventListener("click", () => switchModalTab("away"));
 
