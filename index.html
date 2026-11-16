@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -129,7 +128,8 @@ input[type=date] {
 
 #players-container article,
 #extra-data > div,
-#history-list > button {
+#history-list > button,
+#history-list > article {
  background:linear-gradient(145deg,#102440,#09172a)!important;
  border:1px solid #1a548a!important;
  border-radius:16px!important;
@@ -157,6 +157,43 @@ input[type=date] {
 #extra-data .text-green-400 {color:#34d399!important}
 #close-modal,#close-history {color:#c5e5ff!important}
 #history-list > button:hover {border-color:#00bfff!important}
+
+/* ---------- Historique : gagnés / perdus ---------- */
+.hf {
+ background:#102440;
+ border:1px solid #1764a5;
+ color:#cfe2fb;
+ border-radius:999px;
+ padding:8px 13px;
+ font-size:13px;
+ font-weight:700;
+ min-height:40px;
+}
+.hf.on {
+ background:linear-gradient(110deg,#087cff,#0a5fd0);
+ border-color:#2f9bff;
+ color:#fff;
+ box-shadow:0 0 12px #087cff66;
+}
+.hs {
+ background:#0c1d35;
+ border:1px solid #1a548a;
+ border-radius:14px;
+ padding:11px 8px;
+ text-align:center;
+}
+.hs .l {font-size:11px;font-weight:700;color:#9eb4d0;text-transform:uppercase;letter-spacing:.04em}
+.hs .v {font-size:22px;font-weight:800;color:#5fd4ff;line-height:1.2}
+.hs .d {font-size:11px;color:#9eb4d0}
+.hc {padding:12px 12px 10px}
+.hc .head {width:100%;text-align:left;background:none;border:0;color:inherit;padding:0}
+.hpill {display:inline-block;border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:800;letter-spacing:.03em}
+.hpill.w {background:#0f5132;color:#8ef3c0}
+.hpill.l {background:#5b1424;color:#ffa3b4}
+.hpill.p {background:#243452;color:#a9c0df}
+.hchip {display:inline-block;border-radius:9px;padding:4px 8px;margin:0 5px 5px 0;font-size:12px;border:1px solid #2a3f63;color:#a9c0df}
+.hchip.y {border-color:#10b981;color:#8ef3c0}
+.hchip.n {border-color:#ef4466;color:#ffa3b4}
 
 button {transition:.2s ease}
 button:focus-visible,input:focus-visible {
@@ -268,6 +305,7 @@ Score statistique le plus probable :
 </div>
 <div class="p-3 sm:p-4 flex-1 overflow-y-auto modal-scroll space-y-3">
 <div id="metrics-box"></div>
+<div id="history-filters" class="flex flex-wrap gap-2"></div>
 <div id="history-list" class="space-y-2"></div>
 </div>
 </section>
@@ -748,65 +786,124 @@ function formatParis(iso) {
  }
 }
 
-async function loadMetrics() {
- const box=$("metrics-box");
- box.innerHTML="";
+/* ---------- Historique : pronostics gagnés / perdus et pourcentages ---------- */
+let HIST_GAMES=[];
+let HIST_FILTER="all";
 
- try {
-  const response=await fetch("/api/metrics");
-  if(!response.ok)return;
+const pctOf=(h,n)=>n?(h/n*100).toFixed(1)+" %":"—";
+const tickOf=hit=>hit===true?"✅":hit===false?"❌":"•";
 
-  const m=await response.json();
-  const n=m.games_evaluated||0;
-  const acc=m.match_winner_home&&m.match_winner_home.accuracy_pct!=null
-  ?`${m.match_winner_home.accuracy_pct} %`:"—";
-  const safe=m.safe_top5_goals&&m.safe_top5_goals.hit_rate_pct!=null
-  ?`${m.safe_top5_goals.hit_rate_pct} % (${m.safe_top5_goals.n} joueurs)`:"—";
+function renderSummary(s) {
+ const cell=(label,h,n)=>`
+ <div class="hs">
+ <div class="l">${label}</div>
+ <div class="v">${pctOf(h,n)}</div>
+ <div class="d">${n?`${h} sur ${n}`:"pas encore de résultat"}</div>
+ </div>`;
+ $("metrics-box").innerHTML=`
+ <div class="rounded-xl border p-3">
+ <div class="font-bold text-sm mb-2">📈 Réussite du modèle <span class="text-xs font-normal text-slate-400">(${s.games} dernier${s.games>1?"s":""} match${s.games>1?"s":""} terminé${s.games>1?"s":""})</span></div>
+ <div class="grid grid-cols-2 gap-2">
+ ${cell("Vainqueur trouvé",s.w_hit,s.w_n)}
+ ${cell("Plus / moins de 5,5 buts",s.o_hit,s.o_n)}
+ ${cell("Buteurs top 5",s.g_hit,s.g_n)}
+ ${cell("Passeurs top 5",s.a_hit,s.a_n)}
+ </div>
+ ${s.games<30?'<div class="text-xs text-slate-400 mt-2">Peu de matchs pour l\'instant : ces pourcentages bougent encore beaucoup.</div>':""}
+ </div>`;
+}
 
-  box.innerHTML=`
-  <div class="rounded-xl border border-slate-700 p-3 text-xs space-y-1">
-  <div class="font-bold text-sm">📈 Résultats du modèle</div>
-  <div>Matchs évalués : <b>${n}</b></div>
-  <div>Vainqueur trouvé : <b>${escapeHtml(acc)}</b></div>
-  <div>Top 5 sécurité (buteurs) marque : <b>${escapeHtml(safe)}</b></div>
-  ${n<30?'<div class="text-slate-400">Trop peu de matchs pour conclure : ces chiffres sont encore très bruités.</div>':""}
-  </div>`;
- } catch {}
+function renderFilters() {
+ const done=HIST_GAMES.filter(g=>g.status==="done");
+ const won=done.filter(g=>g.winner.hit===true).length;
+ const lost=done.filter(g=>g.winner.hit===false).length;
+ const pend=HIST_GAMES.filter(g=>g.status==="pending").length;
+ const defs=[["all","Tous ("+HIST_GAMES.length+")"],["won","✅ Gagnés ("+won+")"],["lost","❌ Perdus ("+lost+")"],["pending","⏳ En attente ("+pend+")"]];
+ $("history-filters").innerHTML=defs.map(([k,label])=>`<button type="button" class="hf${HIST_FILTER===k?" on":""}" data-f="${k}">${label}</button>`).join("");
+ $("history-filters").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
+  HIST_FILTER=b.dataset.f;
+  renderFilters();
+  renderHistory();
+ }));
+}
+
+function chipsOf(players) {
+ return players.map(p=>`<span class="hchip ${p.hit===true?"y":p.hit===false?"n":""}">${tickOf(p.hit)} ${escapeHtml(p.name)} <span style="opacity:.7">${escapeHtml(p.team)}</span>${p.hit===null?" (n'a pas joué)":""}</span>`).join("");
+}
+
+function historyCard(g,index) {
+ const done=g.status==="done";
+ const title=done
+ ?`${escapeHtml(g.home)} <b>${g.score[0]}</b> – <b>${g.score[1]}</b> ${escapeHtml(g.away)}`
+ :escapeHtml(g.match);
+ const pill=!done?'<span class="hpill p">⏳ EN ATTENTE</span>'
+ :g.winner.hit?'<span class="hpill w">✅ GAGNÉ</span>':'<span class="hpill l">❌ PERDU</span>';
+ const overLine=done
+ ?`Buts : <b>${g.over55.pick==="plus"?"Plus":"Moins"} de 5,5</b> (${g.over55.pct} %) → ${g.over55.total} buts ${tickOf(g.over55.hit)}`
+ :`Buts : <b>${g.over55.pick==="plus"?"Plus":"Moins"} de 5,5</b> (${g.over55.pct} %)`;
+ const players=done&&(g.goals.players.length||g.assists.players.length)?`
+ <details class="mt-2">
+ <summary class="text-xs cursor-pointer" style="color:#5fd4ff">Voir les joueurs pronostiqués</summary>
+ ${g.goals.players.length?`<div class="text-xs mt-2 mb-1 font-bold">🎯 Buteurs</div>${chipsOf(g.goals.players)}`:""}
+ ${g.assists.players.length?`<div class="text-xs mt-1 mb-1 font-bold">🤝 Passeurs</div>${chipsOf(g.assists.players)}`:""}
+ </details>`:"";
+ return `
+ <article class="hc">
+ <button type="button" class="head" data-i="${index}">
+ <div class="flex items-center justify-between gap-2">
+ <div class="font-extrabold text-base sm:text-lg min-w-0">${title}</div>
+ ${pill}
+ </div>
+ <div class="text-xs text-slate-400 mt-0.5">${escapeHtml(formatParis(g.date))} • touche pour voir l'analyse complète</div>
+ </button>
+ <div class="text-sm mt-2 space-y-1">
+ <div>Favori : <b>${escapeHtml(g.winner.pick)}</b> (${g.winner.pct} %) ${done?tickOf(g.winner.hit):""}</div>
+ <div>${overLine}</div>
+ ${done?`<div>Buteurs top 5 : <b>${g.goals.hits}/${g.goals.n}</b> <span class="text-slate-400">(${pctOf(g.goals.hits,g.goals.n)})</span> • Passeurs top 5 : <b>${g.assists.hits}/${g.assists.n}</b> <span class="text-slate-400">(${pctOf(g.assists.hits,g.assists.n)})</span></div>`:""}
+ </div>
+ ${players}
+ </article>`;
+}
+
+function renderHistory() {
+ const list=$("history-list");
+ const rows=HIST_GAMES.map((g,i)=>[g,i]).filter(([g])=>
+  HIST_FILTER==="all"
+  ||(HIST_FILTER==="won"&&g.status==="done"&&g.winner.hit===true)
+  ||(HIST_FILTER==="lost"&&g.status==="done"&&g.winner.hit===false)
+  ||(HIST_FILTER==="pending"&&g.status==="pending"));
+ if(!rows.length) {
+  list.innerHTML='<div class="text-center py-8 text-slate-400 rounded-xl">Aucun match dans cette catégorie pour le moment.</div>';
+  return;
+ }
+ list.innerHTML=rows.map(([g,i])=>historyCard(g,i)).join("");
+ list.querySelectorAll(".head").forEach(b=>b.addEventListener("click",()=>{
+  const g=HIST_GAMES[+b.dataset.i];
+  if(g)openHistoryDetail({id:g.id,match_name:g.match});
+ }));
 }
 
 async function loadHistory() {
  const list=$("history-list");
  list.innerHTML='<div class="text-center py-8 text-slate-400">Chargement…</div>';
- loadMetrics();
+ $("metrics-box").innerHTML="";
+ $("history-filters").innerHTML="";
 
  try {
-  const response=await fetch("/api/history?limit=50");
+  const response=await fetch("/api/results?limit=40");
   const data=await response.json();
 
   if(!response.ok)throw new Error(data.detail||`Erreur HTTP ${response.status}`);
 
-  if(!data.predictions||!data.predictions.length) {
+  HIST_GAMES=data.games||[];
+  if(!HIST_GAMES.length) {
    list.innerHTML='<div class="text-center py-8 rounded-xl">Aucune prédiction enregistrée pour le moment.</div>';
    return;
   }
 
-  list.innerHTML="";
-  data.predictions.forEach(row=>{
-   const item=document.createElement("button");
-   item.type="button";
-   item.className="w-full text-left border rounded-xl p-3 transition";
-   item.innerHTML=`
-   <div class="flex items-center justify-between gap-2">
-   <div class="font-extrabold text-base sm:text-lg">${escapeHtml(row.match_name)}</div>
-   <div class="text-xs text-slate-400 shrink-0">${escapeHtml(formatParis(row.created_at))}</div>
-   </div>
-   <div class="text-xs mt-1">
-   Victoire dom. <b>${row.home_win??"—"}%</b> • ext. <b>${row.away_win??"—"}%</b>
-   • Buts attendus <b>${row.home_xg??"—"} - ${row.away_xg??"—"}</b>
-   </div>`;
-   item.addEventListener("click",()=>openHistoryDetail(row));
-   list.appendChild(item);
-  });
+  renderSummary(data.summary);
+  renderFilters();
+  renderHistory();
  } catch(err) {
   list.innerHTML=`<div class="text-center py-8 text-red-400">Impossible de charger l'historique : ${escapeHtml(err.message)}</div>`;
  }
