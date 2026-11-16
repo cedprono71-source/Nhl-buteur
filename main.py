@@ -21,12 +21,12 @@ from pydantic import BaseModel, Field
 from scipy.stats import nbinom, poisson
 
 # ============================================================
-# NHL GOALSCORER ANALYTICS - VERSION 39.75
+# NHL GOALSCORER ANALYTICS - VERSION 39.76
 # Adapté pour Vercel : plus de boucle de fond au démarrage.
 # Les mises à jour automatiques passent par GitHub Actions.
 # ============================================================
 
-VERSION = "39.75"
+VERSION = "39.76"
 DB_FILE = os.getenv("DB_FILE", "nhl_history.db")
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()   # si défini : PostgreSQL externe (ex. Neon), sinon SQLite local
 USE_PG = bool(DATABASE_URL)
@@ -1149,7 +1149,8 @@ def compute_metrics():
         "games_evaluated": len(latest),
         "match_winner_home": {**_calibration(winner),
                               "accuracy_pct": round(sum(1 for p, y in winner if (p >= .5) == bool(y)) / len(winner) * 100, 1) if winner else None},
-        "over_5_5": _calibration(over55),
+        "over_5_5": {**_calibration(over55),
+                     "accuracy_pct": round(sum(1 for p, y in over55 if (p >= .5) == bool(y)) / len(over55) * 100, 1) if over55 else None},
         "goalscorer_calibration": _calibration(pools["goal"]),
         "playmaker_calibration": _calibration(pools["assist"]),
         "safe_top5_goals": hit_rate(pools["safe_goal"]),
