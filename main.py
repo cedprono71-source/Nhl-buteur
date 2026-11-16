@@ -21,12 +21,12 @@ from pydantic import BaseModel, Field
 from scipy.stats import nbinom, poisson
 
 # ============================================================
-# NHL GOALSCORER ANALYTICS - VERSION 39.76
+# NHL GOALSCORER ANALYTICS - VERSION 39.77
 # Adapté pour Vercel : plus de boucle de fond au démarrage.
 # Les mises à jour automatiques passent par GitHub Actions.
 # ============================================================
 
-VERSION = "39.76"
+VERSION = "39.77"
 DB_FILE = os.getenv("DB_FILE", "nhl_history.db")
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()   # si défini : PostgreSQL externe (ex. Neon), sinon SQLite local
 USE_PG = bool(DATABASE_URL)
@@ -509,12 +509,17 @@ def calculate_security_profile(probability_pct, games, recent_form, metric):
     """Score de régularité statistique, pas une garantie de résultat."""
     games_factor = min(max(int(games or 0), 0) / 25.0, 1.0)
     if recent_form:
-        recent_count = recent_form.get("goals" if metric == "goal" else "assists", 0)
-        activity_factor = min(recent_count / (3.0 if metric == "goal" else 4.0), 1.0)
-        if metric == "goal":
+        if metric == "point":
+            recent_count = (recent_form.get("goals", 0) or 0) + (recent_form.get("assists", 0) or 0)
+            activity_factor = min(recent_count / 5.0, 1.0)
             shot_factor = min((recent_form.get("shots_per_game", 0) or 0) / 3.0, 1.0)
         else:
-            shot_factor = min((recent_form.get("assists_per_game", 0) or 0) / 0.5, 1.0)
+            recent_count = recent_form.get("goals" if metric == "goal" else "assists", 0)
+            activity_factor = min(recent_count / (3.0 if metric == "goal" else 4.0), 1.0)
+            if metric == "goal":
+                shot_factor = min((recent_form.get("shots_per_game", 0) or 0) / 3.0, 1.0)
+            else:
+                shot_factor = min((recent_form.get("assists_per_game", 0) or 0) / 0.5, 1.0)
     else:
         activity_factor = 0.0
         shot_factor = 0.0
@@ -575,7 +580,7 @@ def fetch_nhl_players(team_str, metric="goal", opponent_factor=1.0,
         pos = p.get("positionCode", "")
         if metric == "goal" and pos not in ("L", "R", "C", "F"):
             continue
-        if metric == "assist" and pos not in ("L", "R", "C", "F", "D"):
+        if metric in ("assist", "point") and pos not in ("L", "R", "C", "F", "D"):
             continue
         if int(p.get("gamesPlayed", 0) or 0) <= 0:
             continue
@@ -589,15 +594,29 @@ def fetch_nhl_players(team_str, metric="goal", opponent_factor=1.0,
         games = int(p.get("gamesPlayed", 0) or 0)
         player_id = p.get("playerId") or p.get("id")
         recent = forms.get(player_id)
-        pred = calculate_player_probability(
-            goals, assists, games, recent,
-            opponent_factor * goalie_factor, team_factor, metric,
-            shots=int(p.get("shots", 0) or 0),
-            season_toi_seconds=p.get("avgTimeOnIcePerGame")
-        )
-        total = goals if metric == "goal" else assists
-        label = "buts" if metric == "goal" else "passes décisives"
-        recent_total = recent["goals" if metric == "goal" else "assists"] if recent else 0
+        shots_total = int(p.get("shots", 0) or 0)
+        toi_season = p.get("avgTimeOnIcePerGame")
+        if metric == "point":
+            # Points = buts + passes : on additionne les deux taux attendus (événements supposés indépendants)
+            pg = calculate_player_probability(goals, assists, games, recent, opponent_factor * goalie_factor,
+                                              team_factor, "goal", shots=shots_total, season_toi_seconds=toi_season)
+            pa = calculate_player_probability(goals, assists, games, recent, opponent_factor * goalie_factor,
+                                              team_factor, "assist", shots=shots_total, season_toi_seconds=toi_season)
+            rate = pg["expected_rate"] + pa["expected_rate"]
+            prob = clamp(1 - math.exp(-rate), 0.001, 0.95)
+            pred = {"probability": round(prob * 100, 1), "fair_odds": probability_to_odds(prob),
+                    "expected_rate": round(rate, 3), "toi_factor": pg["toi_factor"], "prob_2plus_goals": None}
+            total, label = goals + assists, "points (but + passe)"
+            recent_total = (recent["goals"] + recent["assists"]) if recent else 0
+        else:
+            pred = calculate_player_probability(
+                goals, assists, games, recent,
+                opponent_factor * goalie_factor, team_factor, metric,
+                shots=shots_total, season_toi_seconds=toi_season
+            )
+            total = goals if metric == "goal" else assists
+            label = "buts" if metric == "goal" else "passes décisives"
+            recent_total = recent["goals" if metric == "goal" else "assists"] if recent else 0
         security = calculate_security_profile(pred["probability"], games, recent, metric)
         output.append({
             "player_id": player_id, "name": _player_name(p), "pos": pos,
@@ -702,7 +721,12 @@ def calculate_match_model(home_xg, away_xg, ot_home_share=0.5):
     home_final = home_reg + draw * ot_home_share
     away_final = away_reg + draw * (1 - ot_home_share)
     total = home_final + away_final or 1
+    def team_lines(pmf):
+        # P(l'équipe marque au moins k buts) : plus de 1.5 -> k=2, 2.5 -> k=3, 3.5 -> k=4
+        return {"over_1_5": round(sum(pmf[2:]) * 100, 1), "over_2_5": round(sum(pmf[3:]) * 100, 1),
+                "over_3_5": round(sum(pmf[4:]) * 100, 1)}
     return {
+        "team_totals": {"home": team_lines(home_pmf), "away": team_lines(away_pmf)},
         "home_win_pct_value": round(home_final / total * 100, 1),
         "away_win_pct_value": round(away_final / total * 100, 1),
         "draw_or_ot_pct_value": round(draw * 100, 1),
@@ -811,6 +835,8 @@ def build_match_prediction(req):
     away_scorers = fetch_nhl_players(away_abbr, "goal", away_factor, away_team_factor, home_stats)
     home_playmakers = fetch_nhl_players(home_abbr, "assist", home_factor, home_team_factor, away_stats)
     away_playmakers = fetch_nhl_players(away_abbr, "assist", away_factor, away_team_factor, home_stats)
+    home_points = fetch_nhl_players(home_abbr, "point", home_factor, home_team_factor, away_stats)
+    away_points = fetch_nhl_players(away_abbr, "point", away_factor, away_team_factor, home_stats)
     home_goalies, away_goalies = goalie_analysis(home_stats), goalie_analysis(away_stats)
 
     # Top 5 MODE SÉCURITÉ : classement par score de régularité, sans promettre un résultat.
@@ -834,8 +860,10 @@ def build_match_prediction(req):
         },
         "top_goalscorers_home": home_scorers, "top_goalscorers_away": away_scorers,
         "top_playmakers_home": home_playmakers, "top_playmakers_away": away_playmakers,
+        "top_points_home": home_points, "top_points_away": away_points,
         "safe_top5_goals_home": safe(home_scorers), "safe_top5_goals_away": safe(away_scorers),
         "safe_top5_assists_home": safe(home_playmakers), "safe_top5_assists_away": safe(away_playmakers),
+        "safe_top5_points_home": safe(home_points), "safe_top5_points_away": safe(away_points),
         "goalies_home": home_goalies, "goalies_away": away_goalies,
         "roster_home": fetch_team_roster(home_abbr), "roster_away": fetch_team_roster(away_abbr),
         "team_stats": {
@@ -1120,7 +1148,7 @@ def compute_metrics():
         latest.setdefault(row["game_id"], row)
 
     winner, over55 = [], []
-    pools = {"goal": [], "assist": [], "safe_goal": [], "safe_assist": []}
+    pools = {"goal": [], "assist": [], "safe_goal": [], "safe_assist": [], "point": [], "safe_point": []}
     for row in latest.values():
         pred = json.loads(row["prediction_json"])
         mp = pred.get("match_prediction", {})
@@ -1141,6 +1169,11 @@ def compute_metrics():
                     stat = actual.get(str(pl.get("player_id")))
                     if stat is not None:
                         pools[metric].append((pl["probability_value"] / 100, 1 if stat[idx] >= 1 else 0))
+            for key, metric in (("top_points", "point"), ("safe_top5_points", "safe_point")):
+                for pl in pred.get(f"{key}_{side}", []) or []:
+                    stat = actual.get(str(pl.get("player_id")))
+                    if stat is not None:
+                        pools[metric].append((pl["probability_value"] / 100, 1 if stat[0] + stat[1] >= 1 else 0))
 
     def hit_rate(pairs):
         return {"n": len(pairs), "hit_rate_pct": round(sum(y for _, y in pairs) / len(pairs) * 100, 1)} if pairs else {"n": 0}
@@ -1155,6 +1188,8 @@ def compute_metrics():
         "playmaker_calibration": _calibration(pools["assist"]),
         "safe_top5_goals": hit_rate(pools["safe_goal"]),
         "safe_top5_assists": hit_rate(pools["safe_assist"]),
+        "points_calibration": _calibration(pools["point"]),
+        "safe_top5_points": hit_rate(pools["safe_point"]),
         "notes": "Brier plus bas = mieux. Comparer à brier_constant_baseline : en dessous, le modèle apporte de l'information. "
                  "Il faut plusieurs centaines de joueurs évalués avant de tirer une conclusion."
     }
