@@ -564,17 +564,27 @@ async function loadMetrics() {
     if (!response.ok) return;
     const m = await response.json();
     const n = m.games_evaluated || 0;
-    const acc = m.match_winner_home && m.match_winner_home.accuracy_pct != null
-      ? `${m.match_winner_home.accuracy_pct} %` : "—";
-    const safe = m.safe_top5_goals && m.safe_top5_goals.hit_rate_pct != null
-      ? `${m.safe_top5_goals.hit_rate_pct} % (${m.safe_top5_goals.n} joueurs)` : "—";
+    const pct = v => (v != null ? `${v} %` : "—");
+    const win = m.match_winner_home ? m.match_winner_home.accuracy_pct : null;
+    const over = m.over_5_5 ? m.over_5_5.accuracy_pct : null;
+    const safeRate = m.safe_top5_goals && m.safe_top5_goals.hit_rate_pct != null ? m.safe_top5_goals.hit_rate_pct : null;
+    const safeN = m.safe_top5_goals ? m.safe_top5_goals.n : 0;
+    const tile = (value, label, sub) => `
+      <div class="bg-white border border-slate-200 rounded-xl p-3 text-center">
+        <div class="text-3xl font-extrabold text-slate-900 leading-tight">${escapeHtml(value)}</div>
+        <div class="text-sm font-bold text-slate-700 mt-1">${label}</div>
+        ${sub ? `<div class="text-xs text-slate-500 mt-0.5">${sub}</div>` : ""}
+      </div>`;
     box.innerHTML = `
-      <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 space-y-1">
-        <div class="font-bold text-sm text-slate-900">📈 Résultats du modèle</div>
-        <div>Matchs évalués : <b>${n}</b></div>
-        <div>Vainqueur trouvé : <b>${escapeHtml(acc)}</b></div>
-        <div>Top 5 sécurité (buteurs) marque : <b>${escapeHtml(safe)}</b></div>
-        ${n < 30 ? '<div class="text-slate-400">Trop peu de matchs pour conclure : ces chiffres sont encore très bruités.</div>' : ""}
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:p-4 space-y-3">
+        <div class="font-extrabold text-lg text-slate-900">📈 Résultats du modèle</div>
+        <div class="grid grid-cols-2 gap-2">
+          ${tile(n, "Matchs évalués", "")}
+          ${tile(pct(win), "Vainqueur trouvé", "")}
+          ${tile(pct(over), "+5.5 buts trouvé", "Plus ou moins de 5,5 buts")}
+          ${tile(pct(safeRate), "Top 5 sécurité", `Buteur qui marque (${safeN} joueurs)`)}
+        </div>
+        ${n < 30 ? '<div class="text-sm text-slate-500">Trop peu de matchs pour conclure : ces chiffres sont encore très bruités.</div>' : ""}
       </div>`;
   } catch (e) { /* les métriques sont facultatives */ }
 }
