@@ -3,712 +3,976 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#f1f5f9">
+<meta name="theme-color" content="#050b18">
 <title>NHL GoalScorer Analytics 39.73</title>
 <script src="https://cdn.tailwindcss.com"></script>
+
 <style>
-  button:focus-visible,input:focus-visible { outline:3px solid #f87171; outline-offset:2px; }
-  .modal-scroll { overscroll-behavior:contain; }
+:root {
+ color-scheme:dark;
+ --bg:#050b18;
+ --panel:#0b172b;
+ --panel2:#102440;
+ --border:#164b85;
+ --blue:#087cff;
+ --cyan:#00c8ff;
+ --red:#ef263d;
+ --muted:#9eb4d0;
+}
+* {
+ scrollbar-width:thin;
+ scrollbar-color:#1675c9 #050b18;
+}
+body {
+ background:radial-gradient(ellipse at 50% 0%,#123a70 0%,transparent 48%),linear-gradient(180deg,#07152b,#030914 75%)!important;
+ color:#f1f7ff!important;
+}
+header {
+ background:linear-gradient(110deg,#071326,#102b50,#071326)!important;
+ border-color:#087cff!important;
+ box-shadow:0 4px 25px #007bff55!important;
+}
+header h1 {color:#00bfff!important;text-shadow:0 0 15px #008cff88}
+main {padding-top:22px!important}
+#api-status,#loading,#no-matches {color:#a9c4e6!important}
+
+#matches-container > button {
+ background:linear-gradient(145deg,#102746,#071326)!important;
+ border:1px solid #155b9e!important;
+ border-radius:20px!important;
+ color:#f8fbff!important;
+ padding:19px 12px!important;
+ box-shadow:0 5px 20px #0008,inset 0 0 15px #087cff12!important;
+ overflow:hidden;
+}
+#matches-container > button:hover {
+ border-color:#00bfff!important;
+ box-shadow:0 0 20px #087cff66!important;
+ transform:translateY(-3px);
+}
+#matches-container img {filter:drop-shadow(0 3px 8px #0008)}
+#matches-container button span.bg-slate-100 {
+ background:#123d6a!important;
+ color:#fff!important;
+ border-color:#168cff!important;
+}
+#matches-container button .text-red-500 {color:#00bfff!important}
+#matches-container button .text-slate-400 {color:#8daacb!important}
+
+input[type=date] {
+ background:#102440!important;
+ color:white!important;
+ border:1px solid #1764a5!important;
+}
+#refresh-btn {
+ background:linear-gradient(135deg,#ef263d,#a90025)!important;
+ box-shadow:0 0 12px #ef263d66;
+}
+#history-btn {
+ background:#102440!important;
+ color:white!important;
+ border:1px solid #1764a5!important;
+}
+
+#modal,#history-modal {
+ background:#020817ef!important;
+ backdrop-filter:blur(12px);
+}
+#modal section,#history-modal section {
+ background:linear-gradient(160deg,#0c1d35,#050d1c)!important;
+ border:1px solid #087cff!important;
+ box-shadow:0 0 35px #007bff35!important;
+ border-radius:22px!important;
+}
+#modal section > div:first-child,
+#history-modal section > div:first-child {
+ background:linear-gradient(110deg,#102d50,#09172c)!important;
+ border-color:#1764a5!important;
+}
+#modal-teams {color:white!important}
+#modal .border,#history-modal .border {border-color:#194b7b!important}
+
+#modal .bg-slate-50,
+#history-modal .bg-slate-50 {
+ background:#102440!important;
+ border-color:#19548b!important;
+ color:#f1f5f9!important;
+}
+#modal .bg-slate-100 {background:#142b49!important}
+#modal .bg-slate-200 {background:#1a3658!important}
+
+#modal .text-slate-900,
+#modal .text-slate-800,
+#history-modal .text-slate-900 {color:#f8fafc!important}
+
+#modal .text-slate-600,
+#modal .text-slate-500,
+#history-modal .text-slate-600,
+#history-modal .text-slate-500 {color:#a9c0df!important}
+
+#pred-home-win {color:#ff4055!important}
+#pred-away-win {color:#00bfff!important}
+#pred-home-win,#pred-away-win {text-shadow:0 0 12px #168cff55}
+
+#bar-home {background:linear-gradient(90deg,#ff1736,#d90025)!important}
+#bar-away {background:linear-gradient(90deg,#087cff,#00c8ff)!important}
+
+#tab-type-goals[aria-selected=true],
+#tab-type-assists[aria-selected=true],
+#btn-home[aria-selected=true],
+#btn-away[aria-selected=true] {
+ background:linear-gradient(110deg,#ed1837,#a90027)!important;
+ color:white!important;
+ box-shadow:0 0 14px #ef263d66;
+}
+
+#players-container article,
+#extra-data > div,
+#history-list > button,
+#history-list > article {
+ background:linear-gradient(145deg,#102440,#09172a)!important;
+ border:1px solid #1a548a!important;
+ border-radius:16px!important;
+ color:#f1f5f9!important;
+ box-shadow:0 4px 15px #0005;
+}
+#players-container article {padding:16px!important}
+#players-container article .bg-slate-700 {background:#19416b!important}
+#players-container article .bg-red-500 {
+ background:linear-gradient(90deg,#ef263d,#00aaff)!important;
+}
+
+#safe-top5 section {
+ background:linear-gradient(145deg,#07372f,#09251f)!important;
+ border:1px solid #10b981!important;
+ border-radius:19px!important;
+ box-shadow:0 0 18px #10b98122;
+ padding:16px!important;
+}
+#safe-top5 section * {color:#d1fae5!important}
+#safe-top5 section .text-red-400 {color:#ff4055!important}
+#safe-top5 section .bg-amber-500 {background:#f59e0b!important}
+#safe-top5 section .border-t {border-color:#176653!important}
+
+#extra-data .text-green-400 {color:#34d399!important}
+#close-modal,#close-history {color:#c5e5ff!important}
+#history-list > button:hover {border-color:#00bfff!important}
+
+/* ---------- Historique : gagnés / perdus ---------- */
+.hf {
+ background:#102440;
+ border:1px solid #1764a5;
+ color:#cfe2fb;
+ border-radius:999px;
+ padding:8px 13px;
+ font-size:13px;
+ font-weight:700;
+ min-height:40px;
+}
+.hf.on {
+ background:linear-gradient(110deg,#087cff,#0a5fd0);
+ border-color:#2f9bff;
+ color:#fff;
+ box-shadow:0 0 12px #087cff66;
+}
+.hs {
+ background:#0c1d35;
+ border:1px solid #1a548a;
+ border-radius:14px;
+ padding:11px 8px;
+ text-align:center;
+}
+.hs .l {font-size:11px;font-weight:700;color:#9eb4d0;text-transform:uppercase;letter-spacing:.04em}
+.hs .v {font-size:22px;font-weight:800;color:#5fd4ff;line-height:1.2}
+.hs .d {font-size:11px;color:#9eb4d0}
+.hc {padding:12px 12px 10px}
+.hc .head {width:100%;text-align:left;background:none;border:0;color:inherit;padding:0}
+.hpill {display:inline-block;border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:800;letter-spacing:.03em}
+.hpill.w {background:#0f5132;color:#8ef3c0}
+.hpill.l {background:#5b1424;color:#ffa3b4}
+.hpill.p {background:#243452;color:#a9c0df}
+.hchip {display:inline-block;border-radius:9px;padding:4px 8px;margin:0 5px 5px 0;font-size:12px;border:1px solid #2a3f63;color:#a9c0df}
+.hchip.y {border-color:#10b981;color:#8ef3c0}
+.hchip.n {border-color:#ef4466;color:#ffa3b4}
+
+button {transition:.2s ease}
+button:focus-visible,input:focus-visible {
+ outline:3px solid #00bfff;
+ outline-offset:3px;
+}
+.modal-scroll {overscroll-behavior:contain}
+
+@media(max-width:480px) {
+ main {padding:12px!important}
+ #matches-container > button {padding:15px 7px!important}
+ #matches-container img {width:62px;height:62px}
+ #modal section,#history-modal section {border-radius:18px!important}
+ #modal .p-3 {padding:12px!important}
+}
 </style>
 </head>
+
 <body class="bg-slate-100 text-slate-900 min-h-screen font-sans">
 
-<header class="bg-white border-b border-slate-200 py-2 px-3 sm:px-6 sticky top-0 z-40 shadow-sm">
-  <div class="max-w-4xl mx-auto flex items-center justify-between gap-2">
-    <h1 class="text-lg sm:text-xl font-extrabold tracking-wide text-red-600 leading-tight min-w-0">🏒 <span class="text-slate-900">NHL<span class="hidden sm:inline"> GoalScorer Analytics</span></span> <span class="hidden sm:inline text-xs text-slate-400">39.73 • MODE SÉCURITÉ</span></h1>
-    <div class="flex items-center gap-1.5 shrink-0">
-      <label for="date-picker" class="sr-only">Date</label>
-      <input type="date" id="date-picker" class="bg-slate-50 px-2 py-2 rounded-lg border border-slate-300 text-sm">
-      <button id="refresh-btn" aria-label="Actualiser" class="bg-slate-900 text-white w-10 h-10 rounded-lg text-lg font-bold leading-none">⟳</button>
-      <button id="history-btn" aria-label="Historique" class="bg-white text-slate-900 w-10 h-10 rounded-lg text-lg border border-slate-300 leading-none">📜</button>
-    </div>
-  </div>
+<header class="border-b py-3 px-3 sm:px-6 sticky top-0 z-40">
+<div class="max-w-4xl mx-auto flex items-center justify-between gap-2">
+<h1 class="text-lg sm:text-xl font-extrabold tracking-wide leading-tight min-w-0">
+🏒 <span class="text-white">NHL<span class="hidden sm:inline"> GoalScorer Analytics</span></span>
+<span class="hidden sm:inline text-xs text-slate-400">39.73 • MODE SÉCURITÉ</span>
+</h1>
+<div class="flex items-center gap-1.5 shrink-0">
+<label for="date-picker" class="sr-only">Date</label>
+<input type="date" id="date-picker" class="px-2 py-2 rounded-lg border text-sm">
+<button id="refresh-btn" aria-label="Actualiser" class="w-10 h-10 rounded-lg text-lg font-bold">⟳</button>
+<button id="history-btn" aria-label="Historique" class="w-10 h-10 rounded-lg text-lg border">📜</button>
+</div>
+</div>
 </header>
 
 <main class="max-w-4xl mx-auto p-4 sm:p-6">
-  <div id="api-status" class="mb-4 text-xs text-slate-500 text-center">Connexion à l'API…</div>
-  <div id="loading" class="text-center py-12 text-slate-500 font-medium">Chargement des matchs NHL…</div>
-  <div id="matches-container" class="space-y-3"></div>
-  <div id="no-matches" class="hidden text-center py-10 text-slate-500 font-medium"></div>
+<div id="api-status" class="mb-4 text-xs text-center">Connexion à l'API…</div>
+<div id="loading" class="text-center py-12 font-medium">Chargement des matchs NHL…</div>
+<div id="matches-container" class="space-y-3"></div>
+<div id="no-matches" class="hidden text-center py-10 font-medium"></div>
 </main>
 
-<!-- Fenêtre d'analyse d'un match -->
-<div id="modal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm hidden items-center justify-center p-2 sm:p-4 z-50">
- <section class="bg-white w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[94vh]">
-  <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center gap-3">
-    <div class="min-w-0">
-      <div class="text-xs text-slate-500 font-bold uppercase">Analyse du match</div>
-      <div id="modal-teams" class="font-extrabold text-xl sm:text-2xl leading-tight">NHL</div>
-    </div>
-    <button id="close-modal" aria-label="Fermer" class="text-slate-400 hover:text-slate-800 text-3xl leading-none">&times;</button>
-  </div>
-
-  <div class="p-3 sm:p-4 flex-1 overflow-y-auto modal-scroll space-y-4">
-    <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 sm:p-4 space-y-3">
-      <div class="text-xs font-bold text-slate-500 uppercase">Pronostics & buts attendus (xG)</div>
-      <div>
-        <div class="flex justify-between items-end">
-          <div><div class="text-xs text-slate-500 uppercase font-bold">Domicile</div><div id="pred-home-win" class="font-extrabold text-2xl text-red-600">—</div></div>
-          <div class="text-center"><div class="text-xs text-slate-500 uppercase font-bold">Prolong.</div><div id="pred-draw" class="font-bold text-base text-slate-500">—</div></div>
-          <div class="text-right"><div class="text-xs text-slate-500 uppercase font-bold">Extérieur</div><div id="pred-away-win" class="font-extrabold text-2xl text-slate-800">—</div></div>
-        </div>
-        <div class="flex h-3 rounded-full overflow-hidden mt-2 bg-slate-200" role="img" aria-label="Probabilités de victoire">
-          <div id="bar-home" class="bg-red-600 transition-all" style="width:50%"></div>
-          <div id="bar-away" class="bg-slate-800 transition-all" style="width:50%"></div>
-        </div>
-      </div>
-      <div class="flex flex-wrap justify-between gap-2 text-sm font-semibold text-slate-600">
-        <div>Buts attendus : <span id="pred-xg" class="text-slate-900">—</span></div>
-        <div>Over 5.5 : <span id="pred-over55" class="text-red-600">—</span></div>
-      </div>
-      <div class="text-center text-xs text-slate-500">Score statistique le plus probable : <span id="pred-score" class="font-bold text-slate-800">—</span></div>
-      <div id="result-line" class="hidden text-center text-sm font-bold text-slate-800"></div>
-      <div id="team-totals" class="hidden border-t border-slate-200 pt-2"></div>
-    </div>
-
-    <div class="flex bg-slate-200 p-1 rounded-xl">
-      <button id="tab-type-goals" class="flex-1 py-3 text-sm font-bold rounded-lg bg-white shadow-sm">🎯 Buteurs</button>
-      <button id="tab-type-assists" class="flex-1 py-3 text-sm font-bold rounded-lg text-slate-600">🤝 Passeurs</button>
-      <button id="tab-type-points" class="flex-1 py-3 text-sm font-bold rounded-lg text-slate-600">⭐ Points</button>
-    </div>
-
-    <div class="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-      <button id="btn-home" class="flex-1 py-3 text-sm font-bold rounded-lg bg-red-600 text-white">Domicile</button>
-      <button id="btn-away" class="flex-1 py-3 text-sm font-bold rounded-lg text-slate-600">Extérieur</button>
-    </div>
-
-    <div id="safe-top5" class="space-y-2"></div>
-    <div id="players-container" class="space-y-3" aria-live="polite"></div>
-    <div id="extra-data" class="space-y-3"></div>
-  </div>
- </section>
+<div id="modal" class="fixed inset-0 backdrop-blur-sm hidden items-center justify-center p-2 sm:p-4 z-50">
+<section class="w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[94vh]">
+<div class="p-4 border-b flex justify-between items-center gap-3">
+<div class="min-w-0">
+<div class="text-xs text-slate-400 font-bold uppercase">Analyse du match</div>
+<div id="modal-teams" class="font-extrabold text-xl sm:text-2xl">NHL</div>
+</div>
+<button id="close-modal" aria-label="Fermer" class="text-3xl">&times;</button>
 </div>
 
-<!-- Fenêtre Historique -->
-<div id="history-modal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm hidden items-center justify-center p-2 sm:p-4 z-50">
- <section class="bg-white w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[94vh]">
-  <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center gap-3">
-    <div class="font-extrabold text-xl sm:text-2xl">📜 Historique</div>
-    <button id="close-history" aria-label="Fermer" class="text-slate-400 hover:text-slate-800 text-3xl leading-none">&times;</button>
-  </div>
-  <div class="p-3 sm:p-4 flex-1 overflow-y-auto modal-scroll space-y-3">
-    <div id="metrics-box"></div>
-    <div id="history-list" class="space-y-2"></div>
-  </div>
- </section>
+<div class="p-3 sm:p-4 flex-1 overflow-y-auto modal-scroll space-y-4">
+
+<div class="border rounded-xl p-3 sm:p-4 space-y-3">
+<div class="text-xs font-bold text-slate-400 uppercase">Pronostics & buts attendus (xG)</div>
+<div>
+<div class="flex justify-between items-end">
+<div>
+<div class="text-xs uppercase font-bold">Domicile</div>
+<div id="pred-home-win" class="font-extrabold text-2xl">—</div>
+</div>
+<div class="text-center">
+<div class="text-xs uppercase font-bold">Prolong.</div>
+<div id="pred-draw" class="font-bold text-base">—</div>
+</div>
+<div class="text-right">
+<div class="text-xs uppercase font-bold">Extérieur</div>
+<div id="pred-away-win" class="font-extrabold text-2xl">—</div>
+</div>
+</div>
+<div class="flex h-3 rounded-full overflow-hidden mt-2 bg-slate-700" role="img" aria-label="Probabilités de victoire">
+<div id="bar-home" class="transition-all" style="width:50%"></div>
+<div id="bar-away" class="transition-all" style="width:50%"></div>
+</div>
+</div>
+<div class="flex flex-wrap justify-between gap-2 text-sm font-semibold">
+<div>Buts attendus : <span id="pred-xg">—</span></div>
+<div>Over 5.5 : <span id="pred-over55" class="text-red-500">—</span></div>
+</div>
+<div class="text-center text-xs">
+Score statistique le plus probable :
+<span id="pred-score" class="font-bold">—</span>
+</div>
+</div>
+
+<div class="flex p-1 rounded-xl" style="background:#102440" role="tablist">
+<button id="tab-type-goals" class="flex-1 py-3 text-sm font-bold rounded-lg" role="tab" aria-selected="true">🎯 Buteurs</button>
+<button id="tab-type-assists" class="flex-1 py-3 text-sm font-bold rounded-lg" role="tab" aria-selected="false">🤝 Passeurs</button>
+</div>
+
+<div class="flex p-1 rounded-xl border border-slate-700" role="tablist">
+<button id="btn-home" class="flex-1 py-3 text-sm font-bold rounded-lg" role="tab" aria-selected="true">Domicile</button>
+<button id="btn-away" class="flex-1 py-3 text-sm font-bold rounded-lg" role="tab" aria-selected="false">Extérieur</button>
+</div>
+
+<div id="safe-top5" class="space-y-2"></div>
+<div id="players-container" class="space-y-3" aria-live="polite"></div>
+<div id="extra-data" class="space-y-3"></div>
+</div>
+</section>
+</div>
+
+<div id="history-modal" class="fixed inset-0 backdrop-blur-sm hidden items-center justify-center p-2 sm:p-4 z-50">
+<section class="w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[94vh]">
+<div class="p-4 border-b flex justify-between items-center gap-3">
+<div class="font-extrabold text-xl sm:text-2xl">📜 Historique</div>
+<button id="close-history" aria-label="Fermer" class="text-3xl">&times;</button>
+</div>
+<div class="p-3 sm:p-4 flex-1 overflow-y-auto modal-scroll space-y-3">
+<div id="metrics-box"></div>
+<div id="history-filters" class="flex flex-wrap gap-2"></div>
+<div id="history-list" class="space-y-2"></div>
+</div>
+</section>
 </div>
 
 <script>
 "use strict";
 
+const $ = id => document.getElementById(id);
+const datePicker = $("date-picker");
+
 let currentMatchData = null;
 let activeModalTab = "home";
 let activeStatType = "goals";
 let selectedMatch = null;
-
-const $ = id => document.getElementById(id);
-const datePicker = $("date-picker");
+let matchesRequestController = null;
+let predictionRequestController = null;
 
 const today = new Date();
-const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().slice(0,10);
+const localDate = new Date(today.getTime() - today.getTimezoneOffset()*60000).toISOString().slice(0,10);
 datePicker.value = localDate;
 
-function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"']/g, c => ({
-    "&":"&amp;",
-    "<":"&lt;",
-    ">":"&gt;",
-    '"':"&quot;",
-    "'":"&#39;"
-  }[c]));
-}
-
-function setStatus(message, bad=false) {
-  $("api-status").textContent = message;
-  $("api-status").className = "mb-4 text-xs text-center " + (bad ? "text-red-600 font-semibold" : "text-slate-500");
-}
-
-function displayError(message) {
-  $("safe-top5").innerHTML = "";
-  $("players-container").innerHTML = `
-    <div class="rounded-xl border border-red-200 bg-red-50 p-5 text-center">
-      <div class="text-3xl mb-2">⚠️</div>
-      <div class="font-bold text-red-700">${escapeHtml(message)}</div>
-      <button id="retry-prediction" class="mt-4 rounded-lg bg-red-600 px-5 py-3 text-white font-bold">Réessayer</button>
-    </div>`;
-
-  $("retry-prediction").addEventListener("click", () => {
-    if (selectedMatch) {
-      fetchPrediction(selectedMatch.home_abbr, selectedMatch.away_abbr);
-    }
-  });
-}
-
-async function loadNhlMatches(date) {
-  $("loading").classList.remove("hidden");
-  $("matches-container").innerHTML = "";
-  $("no-matches").classList.add("hidden");
-  setStatus("Récupération du calendrier NHL…");
-
-  try {
-    const response = await fetch(`/api/matches/nhl?date=${encodeURIComponent(date)}`);
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.detail || `Erreur HTTP ${response.status}`);
-    }
-
-    $("loading").classList.add("hidden");
-
-    if (!Array.isArray(data.matches) || data.matches.length === 0) {
-      $("no-matches").textContent = "Aucun match NHL trouvé pour cette date.";
-      $("no-matches").classList.remove("hidden");
-    } else {
-      data.matches.forEach(renderMatchCard);
-    }
-
-    setStatus(`${data.matches.length} match(s) trouvé(s) • Fuseau Europe/Paris`);
-
-  } catch (err) {
-    $("loading").classList.add("hidden");
-    $("no-matches").textContent = `Impossible de charger le calendrier : ${err.message}`;
-    $("no-matches").classList.remove("hidden");
-    setStatus("Erreur de connexion à l'API", true);
-  }
-}
-
 const TEAM_NAMES = {
-  ANA:"Anaheim Ducks", BOS:"Boston Bruins", BUF:"Buffalo Sabres", CGY:"Calgary Flames",
-  CAR:"Carolina Hurricanes", CHI:"Chicago Blackhawks", COL:"Colorado Avalanche", CBJ:"Columbus Blue Jackets",
-  DAL:"Dallas Stars", DET:"Detroit Red Wings", EDM:"Edmonton Oilers", FLA:"Florida Panthers",
-  LAK:"Los Angeles Kings", MIN:"Minnesota Wild", MTL:"Montréal Canadiens", NSH:"Nashville Predators",
-  NJD:"New Jersey Devils", NYI:"New York Islanders", NYR:"New York Rangers", OTT:"Ottawa Senators",
-  PHI:"Philadelphia Flyers", PIT:"Pittsburgh Penguins", SJS:"San Jose Sharks", SEA:"Seattle Kraken",
-  STL:"St. Louis Blues", TBL:"Tampa Bay Lightning", TOR:"Toronto Maple Leafs", UTA:"Utah Mammoth",
-  VAN:"Vancouver Canucks", VGK:"Vegas Golden Knights", WSH:"Washington Capitals", WPG:"Winnipeg Jets"
+ANA:"Anaheim Ducks",BOS:"Boston Bruins",BUF:"Buffalo Sabres",
+CGY:"Calgary Flames",CAR:"Carolina Hurricanes",CHI:"Chicago Blackhawks",
+COL:"Colorado Avalanche",CBJ:"Columbus Blue Jackets",DAL:"Dallas Stars",
+DET:"Detroit Red Wings",EDM:"Edmonton Oilers",FLA:"Florida Panthers",
+LAK:"Los Angeles Kings",MIN:"Minnesota Wild",MTL:"Montréal Canadiens",
+NSH:"Nashville Predators",NJD:"New Jersey Devils",NYI:"New York Islanders",
+NYR:"New York Rangers",OTT:"Ottawa Senators",PHI:"Philadelphia Flyers",
+PIT:"Pittsburgh Penguins",SJS:"San Jose Sharks",SEA:"Seattle Kraken",
+STL:"St. Louis Blues",TBL:"Tampa Bay Lightning",TOR:"Toronto Maple Leafs",
+UTA:"Utah Mammoth",VAN:"Vancouver Canucks",VGK:"Vegas Golden Knights",
+WSH:"Washington Capitals",WPG:"Winnipeg Jets"
 };
 
-function teamLabel(name, abbr) {
-  /* Nom donné par l'API s'il est exploitable, sinon nom complet depuis le code, sinon le code */
-  if (name && String(name).trim().length > 3) return String(name).trim();
-  return TEAM_NAMES[abbr] || abbr || "";
+function escapeHtml(value) {
+ return String(value??"").replace(/[&<>"']/g,c=>({
+ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+ }[c]));
 }
 
-function stateLabel(match) {
-  const text = String(match.game_state || "NHL");
-  const m = text.match(/^(\d{2}):\d{2}$/);
-  return m && Number(m[1]) < 7 ? "🌙 " + text : text;
+function normalizeText(value,fallback="—") {
+ const text=String(value??"").trim();
+ return text.length?text:fallback;
 }
 
-function renderMatchCard(match) {
-  const card = document.createElement("button");
-  card.type = "button";
-  card.className = "w-full bg-white border border-slate-200 rounded-2xl p-3 sm:p-5 flex items-center justify-between gap-1 sm:gap-3 shadow-sm hover:shadow-md hover:border-red-300 transition text-left";
+function setStatus(message,bad=false) {
+ const el=$("api-status");
+ el.textContent=message;
+ el.className="mb-4 text-xs text-center "+(bad?"text-red-400 font-semibold":"text-slate-400");
+}
 
-  const pr = match.prediction;
-  const home = escapeHtml(teamLabel(match.home_team, match.home_abbr));
-  const away = escapeHtml(teamLabel(match.away_team, match.away_abbr));
+function setRefreshBusy(isBusy) {
+ const button=$("refresh-btn");
+ button.disabled=isBusy;
+ button.textContent=isBusy?"…":"⟳";
+ button.classList.toggle("opacity-50",isBusy);
+ button.classList.toggle("cursor-not-allowed",isBusy);
+}
 
-  const homeLogo = escapeHtml(match.home_logo || `https://assets.nhle.com/logos/nhl/svg/${match.home_abbr}_light.svg`);
-  const awayLogo = escapeHtml(match.away_logo || `https://assets.nhle.com/logos/nhl/svg/${match.away_abbr}_light.svg`);
+function isValidNhlDate(dateStr) {
+ if(!dateStr)return false;
+ const d=new Date(dateStr+"T00:00:00");
+ return !Number.isNaN(d.getTime());
+}
 
-  /* Logos agrandis (64 px mobile, 96 px grand écran), nom en dessous */
-  card.innerHTML = `
-    <div class="flex flex-col items-center gap-1 flex-1 min-w-0 text-center">
-      <img src="${homeLogo}" alt="" class="w-16 h-16 sm:w-24 sm:h-24 object-contain" onerror="this.style.visibility='hidden'">
-      <span class="font-extrabold text-slate-900 text-sm sm:text-xl leading-tight break-words">${home}</span>
-    </div>
+function setActiveButton(id,active) {
+ const el=$(id);
+ if(!el)return;
+ el.className=active
+ ? "flex-1 py-3 text-sm font-bold rounded-lg bg-red-600 text-white shadow-sm"
+ : "flex-1 py-3 text-sm font-bold rounded-lg text-slate-400";
+ el.setAttribute("aria-selected",String(active));
+}
 
-    <div class="px-1 sm:px-3 text-center shrink-0">
-      <span class="text-xs sm:text-sm bg-slate-100 text-slate-700 px-2 py-1.5 rounded-full font-bold border whitespace-nowrap">${escapeHtml(stateLabel(match))}</span>
-      ${pr ? `<div class="mt-1 text-xs font-semibold text-slate-700 leading-tight">
-          ${match.finished ? `<div>Vainqueur ${mark(pr.winner_ok)}</div>` : ""}
-          <div>+5.5 : ${pr.over_55 != null ? Math.round(pr.over_55) + " %" : "—"} ${match.finished ? mark(pr.over_ok) : ""}</div>
-        </div>` : '<div class="text-[10px] text-slate-400 mt-1">ANALYSER</div>'}
-    </div>
-
-    <div class="flex flex-col items-center gap-1 flex-1 min-w-0 text-center">
-      <img src="${awayLogo}" alt="" class="w-16 h-16 sm:w-24 sm:h-24 object-contain" onerror="this.style.visibility='hidden'">
-      <span class="font-extrabold text-slate-900 text-sm sm:text-xl leading-tight break-words">${away}</span>
-    </div>`;
-
-  card.addEventListener("click", () => {
-    if (!match.home_abbr || !match.away_abbr) {
-      setStatus("Codes des équipes absents du calendrier.", true);
-      return;
-    }
-
-    selectedMatch = match;
-    /* Match terminé déjà prédit : on rouvre la prédiction d'avant-match avec ses ✅/❌ */
-    if (match.finished && pr && pr.id) {
-      openHistoryDetail({ id: pr.id, match_name: `${teamLabel(match.home_team, match.home_abbr)} vs ${teamLabel(match.away_team, match.away_abbr)}` });
-      return;
-    }
-    fetchPrediction(match.home_abbr, match.away_abbr);
-  });
-
-  $("matches-container").appendChild(card);
+function setStatTabState(type) {
+ const goalsActive=type==="goals";
+ $("tab-type-goals").className=goalsActive
+ ? "flex-1 py-3 text-sm font-bold rounded-lg bg-red-600 text-white"
+ : "flex-1 py-3 text-sm font-bold rounded-lg text-slate-400";
+ $("tab-type-assists").className=!goalsActive
+ ? "flex-1 py-3 text-sm font-bold rounded-lg bg-red-600 text-white"
+ : "flex-1 py-3 text-sm font-bold rounded-lg text-slate-400";
+ $("tab-type-goals").setAttribute("aria-selected",String(goalsActive));
+ $("tab-type-assists").setAttribute("aria-selected",String(!goalsActive));
 }
 
 function openModal() {
-  $("modal").classList.remove("hidden");
-  $("modal").classList.add("flex");
-  document.body.classList.add("overflow-hidden");
+ $("modal").classList.remove("hidden");
+ $("modal").classList.add("flex");
+ document.body.classList.add("overflow-hidden");
 }
 
 function closeModal() {
-  $("modal").classList.add("hidden");
-  $("modal").classList.remove("flex");
-  document.body.classList.remove("overflow-hidden");
+ $("modal").classList.add("hidden");
+ $("modal").classList.remove("flex");
+ document.body.classList.remove("overflow-hidden");
 }
-
-function setActiveButton(id, active) {
-  const el = $(id);
-
-  el.className = active
-    ? "flex-1 py-3 text-sm font-bold rounded-lg bg-red-600 text-white shadow-sm"
-    : "flex-1 py-3 text-sm font-bold rounded-lg text-slate-600 hover:text-slate-900";
-}
-
-/* Remplit la fenêtre d'analyse avec une prédiction (en direct ou issue de l'historique) */
-const mark = ok => ok === true ? "✅" : ok === false ? "❌" : "";
-
-function hideResult() {
-  $("result-line").classList.add("hidden");
-  $("team-totals").classList.add("hidden");
-}
-
-function renderTeamTotals(data) {
-  const box = $("team-totals");
-  const t = (data.match_prediction || {}).team_totals;
-  if (!t) { box.classList.add("hidden"); return; }
-  const out = data.outcome;
-  let scores = null;
-  if (out && out.home_score != null) {
-    scores = { home: out.home_score, away: out.away_score };
-    if (out.shootout) { /* le but de la séance de tirs au but ne compte pas */
-      if (scores.home > scores.away) scores.home -= 1; else scores.away -= 1;
-    }
-  }
-  const lines = [["over_1_5", 2, "+1.5"], ["over_2_5", 3, "+2.5"], ["over_3_5", 4, "+3.5"]];
-  const row = (side, label) => `
-    <div class="flex flex-wrap items-center justify-between gap-x-3 py-1">
-      <span class="font-bold text-sm text-slate-800">${escapeHtml(label)}</span>
-      <span class="flex gap-3 text-sm">${lines.map(([k, needed, name]) => {
-        const pv = t[side][k];
-        const m = scores ? mark((pv >= 50) === (scores[side] >= needed)) : "";
-        return `<span><span class="text-xs text-slate-500">${name}</span> <b>${Math.round(pv)}%</b> ${m}</span>`;
-      }).join("")}</span>
-    </div>`;
-  box.innerHTML = '<div class="text-xs font-bold text-slate-500 uppercase mb-1">Total de buts par équipe</div>'
-    + row("home", data.home_team || "Domicile") + row("away", data.away_team || "Extérieur");
-  box.classList.remove("hidden");
-}
-
-function setWinBar(home, away) {
-  const h = Number(home), a = Number(away);
-  const total = (h + a) || 100;
-  $("bar-home").style.width = (h / total * 100) + "%";
-  $("bar-away").style.width = (a / total * 100) + "%";
-}
-
-function showPrediction(data) {
-  currentMatchData = data;
-  const p = data.match_prediction || {};
-
-  setWinBar(p.home_win_pct_value ?? 50, p.away_win_pct_value ?? 50);
-  $("pred-home-win").textContent = p.home_win_pct ?? "—";
-  $("pred-draw").textContent = p.draw_or_ot_pct ?? "—";
-  $("pred-away-win").textContent = p.away_win_pct ?? "—";
-  $("pred-xg").textContent = `${p.expected_goals_home ?? "—"} - ${p.expected_goals_away ?? "—"}`;
-  $("pred-over55").textContent = p.over_5_5_goals_prob ?? "—";
-  $("pred-score").textContent = p.most_likely_score
-    ? `${p.most_likely_score.home} - ${p.most_likely_score.away}`
-    : "—";
-
-  const out = data.outcome;
-  if (out) {
-    $("result-line").innerHTML =
-      `Résultat : ${out.home_score} - ${out.away_score}${out.shootout ? " (tirs au but)" : ""} • Vainqueur ${mark(out.winner_ok)} • +5.5 buts ${mark(out.over_ok)}`;
-    $("result-line").classList.remove("hidden");
-  } else {
-    hideResult();
-  }
-
-  renderTeamTotals(data);
-  renderPlayers();
-  renderExtraData();
-}
-
-async function fetchPrediction(homeTeam, awayTeam) {
-  if (!homeTeam || !awayTeam || ["DOMICILE","EXTERIEUR","HOME","AWAY"].includes(String(homeTeam).toUpperCase())) {
-    openModal();
-    displayError("Équipe non reconnue. Sélectionne un vrai match dans le calendrier.");
-    return;
-  }
-
-  activeModalTab = "home";
-  activeStatType = "goals";
-  currentMatchData = null;
-
-  /* Titre : noms complets des équipes si disponibles, sinon les codes */
-  $("modal-teams").textContent = `${teamLabel(selectedMatch && selectedMatch.home_team, homeTeam)} vs ${teamLabel(selectedMatch && selectedMatch.away_team, awayTeam)}`;
-
-  ["pred-home-win","pred-draw","pred-away-win","pred-xg","pred-over55","pred-score"].forEach(id => {
-    $(id).textContent = "…";
-  });
-
-  hideResult();
-  setWinBar(50, 50);
-  $("players-container").innerHTML = '<div class="text-center py-10 text-slate-500">Calcul des probabilités et récupération des statistiques NHL…</div>';
-  $("extra-data").innerHTML = "";
-  $("safe-top5").innerHTML = "";
-
-  setActiveButton("btn-home", true);
-  setActiveButton("btn-away", false);
-  openModal();
-
-  try {
-    const response = await fetch("/predict/goalscorers", {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({
-        league:"NHL",
-        home_team:homeTeam,
-        away_team:awayTeam
-      })
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.detail || `Erreur HTTP ${response.status}`);
-    }
-
-    showPrediction(data);
-
-  } catch (err) {
-    displayError(err.message || "Erreur lors de la récupération des données.");
-  }
-}
-
-function switchStatType(type) {
-  activeStatType = type;
-
-  [["goals", "tab-type-goals"], ["assists", "tab-type-assists"], ["points", "tab-type-points"]].forEach(([t, id]) => {
-    $(id).className = type === t
-      ? "flex-1 py-3 text-sm font-bold rounded-lg bg-white shadow-sm"
-      : "flex-1 py-3 text-sm font-bold rounded-lg text-slate-600";
-  });
-
-  renderPlayers();
-}
-
-function switchModalTab(tab) {
-  activeModalTab = tab;
-
-  setActiveButton("btn-home", tab === "home");
-  setActiveButton("btn-away", tab === "away");
-
-  renderPlayers();
-  renderExtraData();
-}
-
-function renderPlayers() {
-  if (!currentMatchData) return;
-
-  const side = activeModalTab === "home" ? "home" : "away";
-  const prefix = activeStatType === "goals" ? "top_goalscorers"
-    : activeStatType === "assists" ? "top_playmakers" : "top_points";
-  const safePrefix = activeStatType === "goals" ? "safe_top5_goals"
-    : activeStatType === "assists" ? "safe_top5_assists" : "safe_top5_points";
-  const key = `${prefix}_${side}`;
-  const safeKey = `${safePrefix}_${side}`;
-
-  const players = currentMatchData[key] || [];
-  const safePlayers = currentMatchData[safeKey] || [];
-
-  const container = $("players-container");
-  const safeContainer = $("safe-top5");
-
-  const outcomeMark = p => {
-    const out = currentMatchData.outcome;
-    const actual = out && out.players ? out.players[String(p.player_id)] : null;
-    if (!actual) return "";
-    const hit = activeStatType === "goals" ? actual[0] >= 1
-      : activeStatType === "assists" ? actual[1] >= 1
-      : (actual[0] + actual[1]) >= 1;
-    return hit ? " ✅" : " ❌";
-  };
-
-  const confidenceBadge = p => {
-    const level = p.confidence;
-    const dot = level === "high" ? "bg-green-500" : level === "medium" ? "bg-amber-500" : "bg-red-500";
-    const label = level === "high" ? "Confiance élevée" : level === "medium" ? "Confiance moyenne" : "Risqué";
-    return `<span class="inline-flex items-center gap-1 text-xs font-semibold text-slate-600"><span class="inline-block w-2.5 h-2.5 rounded-full ${dot}"></span>${label}</span>`;
-  };
-
-  safeContainer.innerHTML = safePlayers.length ? `
-    <section class="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-      <div class="flex items-center justify-between gap-2 mb-2">
-        <div class="font-extrabold text-emerald-900">🛡️ TOP 5 — MODE SÉCURITÉ</div>
-        <span class="text-[11px] font-bold text-emerald-800">39.7</span>
-      </div>
-
-      <div class="text-xs text-emerald-800 mb-2">Tri selon probabilité estimée, régularité et forme récente.</div>
-
-      ${safePlayers.map((p,i) => `
-        <div class="flex items-center justify-between gap-2 py-2 border-t border-emerald-100">
-          <div class="min-w-0">
-            <div class="font-bold text-sm text-slate-900">${i+1}. ${escapeHtml(p.name)}</div>
-            <div class="text-xs text-slate-600">${escapeHtml(p.stats)} • Score sécurité ${p.security_score ?? "—"}/100</div>
-          </div>
-          <div class="text-right shrink-0">
-            <div class="font-extrabold text-red-700">${escapeHtml(p.prob)}${outcomeMark(p)}</div>
-            ${confidenceBadge(p)}
-          </div>
-        </div>
-      `).join("")}
-    </section>` : "";
-
-  if (!players.length) {
-    container.innerHTML = '<div class="text-center py-8 text-slate-500 bg-slate-50 rounded-xl">Aucune statistique joueur disponible pour cette équipe pour le moment.</div>';
-    return;
-  }
-
-  container.innerHTML =
-    '<div class="text-xs font-bold uppercase text-slate-500 pt-1">Tous les profils classés par probabilité</div>' +
-    players.map(p => `
-      <article class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <div class="min-w-0">
-          <div class="font-bold text-sm text-slate-900">
-            ${escapeHtml(p.name)}
-            <span class="text-xs bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded">${escapeHtml(p.pos)}</span>
-          </div>
-
-          <div class="text-[13px] text-slate-500 mt-1">
-            ${escapeHtml(p.stats)} • <span class="font-semibold text-slate-700">${escapeHtml(p.momentum)}</span>
-          </div>
-
-          ${p.recent_form ? `
-            <div class="text-xs text-slate-500 mt-1">
-              10 derniers matchs : ${p.recent_form.goals} buts, ${p.recent_form.assists} passes, ${p.recent_form.shots} tirs
-            </div>` : ""}
-
-          <div class="mt-1">
-            ${confidenceBadge(p)}
-            <span class="text-[11px] text-slate-500">Score ${p.security_score ?? "—"}/100</span>
-          </div>
-        </div>
-
-        <div class="text-right shrink-0">
-          <div class="text-red-600 font-extrabold text-base">${escapeHtml(p.prob)}${outcomeMark(p)}</div>
-          <div class="text-xs text-slate-500">Cote juste ${p.odds ? escapeHtml(p.odds) : "—"}</div>
-        </div>
-        <div class="w-full h-1.5 rounded-full bg-slate-200" role="img" aria-label="Probabilité ${escapeHtml(p.prob)}">
-          <div class="h-1.5 rounded-full bg-red-500" style="width:${Math.max(0, Math.min(100, Number(p.probability_value) || 0))}%"></div>
-        </div>
-      </article>
-    `).join("");
-}
-
-function renderExtraData() {
-  if (!currentMatchData) return;
-
-  const goalies = activeModalTab === "home"
-    ? currentMatchData.goalies_home
-    : currentMatchData.goalies_away;
-
-  const teamStats = currentMatchData.team_stats?.[activeModalTab];
-  const values = currentMatchData.value_analysis || {};
-
-  $("extra-data").innerHTML = `
-    <div class="grid sm:grid-cols-2 gap-3">
-      <div class="bg-white border rounded-xl p-3">
-        <div class="font-bold text-sm mb-2">🥅 Gardiens de l'équipe</div>
-        ${(goalies || []).length
-          ? goalies.map(g => `
-              <div class="text-xs py-1 border-b last:border-0">
-                ${escapeHtml(g.name)} — % arrêts : ${g.save_pct ?? "—"} • GAA : ${g.gaa ?? "—"}
-              </div>
-            `).join("")
-          : '<div class="text-xs text-slate-500">Données gardiens indisponibles.</div>'}
-      </div>
-
-      <div class="bg-white border rounded-xl p-3">
-        <div class="font-bold text-sm mb-2">📊 Statistiques équipe</div>
-        <div class="text-xs text-slate-600">
-          ${teamStats ? `${teamStats.goals_per_game} buts/match sur ${teamStats.games} matchs` : "Statistiques indisponibles."}
-        </div>
-      </div>
-    </div>
-
-    <div class="bg-white border rounded-xl p-3">
-      <div class="font-bold text-sm mb-2">💎 Analyse de value</div>
-      ${[
-        ["Victoire domicile",values.home_win],
-        ["Victoire extérieur",values.away_win],
-        ["Over 5.5",values.over_5_5]
-      ].map(([label,v]) => `
-        <div class="flex justify-between gap-2 text-xs py-1 border-b last:border-0">
-          <span>${label}</span>
-          <span class="${v?.value_detected ? "text-green-700 font-bold" : "text-slate-500"}">
-            ${v?.value_detected ? "Value potentielle" : (v?.message || "Non calculée")}
-            ${v?.value_percent != null ? ` (${v.value_percent}%)` : ""}
-          </span>
-        </div>
-      `).join("")}
-    </div>
-
-    <div class="text-xs text-slate-400 text-center">
-      Version ${escapeHtml(currentMatchData.version || "39.7")} • Le score sécurité mesure la régularité des données, jamais une garantie de résultat.
-    </div>`;
-}
-
-/* ---------------- Historique ---------------- */
 
 function openHistory() {
-  $("history-modal").classList.remove("hidden");
-  $("history-modal").classList.add("flex");
-  document.body.classList.add("overflow-hidden");
-  loadHistory();
+ $("history-modal").classList.remove("hidden");
+ $("history-modal").classList.add("flex");
+ document.body.classList.add("overflow-hidden");
+ loadHistory();
 }
 
 function closeHistory() {
-  $("history-modal").classList.add("hidden");
-  $("history-modal").classList.remove("flex");
-  document.body.classList.remove("overflow-hidden");
+ $("history-modal").classList.add("hidden");
+ $("history-modal").classList.remove("flex");
+ document.body.classList.remove("overflow-hidden");
+}
+
+function teamLabel(name,abbr) {
+ const safeName=String(name??"").trim();
+ if(safeName.length>3)return safeName;
+ return TEAM_NAMES[abbr]||abbr||"";
+}
+
+function stateLabel(match) {
+ const text=String(match.game_state||"NHL");
+ const matchTime=text.match(/^([0-9]{2}):[0-9]{2}$/);
+ if(matchTime&&Number(matchTime[1])<7)return "🌙 "+text;
+ return text;
+}
+
+function displayError(message) {
+ $("safe-top5").innerHTML="";
+ $("players-container").innerHTML=`
+ <div class="rounded-xl border border-red-800 bg-red-950 p-5 text-center">
+ <div class="text-3xl mb-2">⚠️</div>
+ <div class="font-bold text-red-300">${escapeHtml(message)}</div>
+ <button id="retry-prediction" class="mt-4 rounded-lg bg-red-600 px-5 py-3 text-white font-bold">Réessayer</button>
+ </div>`;
+ const retryBtn=$("retry-prediction");
+ if(retryBtn)retryBtn.addEventListener("click",()=>{
+  if(selectedMatch)fetchPrediction(selectedMatch.home_abbr,selectedMatch.away_abbr);
+ });
+}
+
+function setupImageFallback(img,fallbackSrc) {
+ if(!img)return;
+ img.addEventListener("error",()=>{
+  img.src=fallbackSrc;
+  img.onerror=null;
+ });
+}
+
+function resetPredictionModal(title="Analyse du match") {
+ $("modal-teams").textContent=title;
+ ["pred-home-win","pred-draw","pred-away-win","pred-xg","pred-over55","pred-score"].forEach(id=>{
+  $(id).textContent="…";
+ });
+ setWinBar(50,50);
+ $("players-container").innerHTML='<div class="text-center py-10 text-slate-400">Calcul des probabilités et récupération des statistiques NHL…</div>';
+ $("extra-data").innerHTML="";
+ $("safe-top5").innerHTML="";
+ setActiveButton("btn-home",true);
+ setActiveButton("btn-away",false);
+}
+
+function setWinBar(home,away) {
+ const h=Number(home);
+ const a=Number(away);
+ const total=(h+a)||100;
+ $("bar-home").style.width=`${(h/total)*100}%`;
+ $("bar-away").style.width=`${(a/total)*100}%`;
+}
+
+async function loadNhlMatches(date) {
+ if(!isValidNhlDate(date)) {
+  setStatus("Date invalide",true);
+  return;
+ }
+
+ if(matchesRequestController)matchesRequestController.abort();
+ matchesRequestController=new AbortController();
+
+ $("loading").classList.remove("hidden");
+ $("matches-container").innerHTML="";
+ $("no-matches").classList.add("hidden");
+ setStatus("Récupération du calendrier NHL…");
+ setRefreshBusy(true);
+
+ try {
+  const response=await fetch(`/api/matches/nhl?date=${encodeURIComponent(date)}`,{
+   signal:matchesRequestController.signal
+  });
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.detail||`Erreur HTTP ${response.status}`);
+
+  $("loading").classList.add("hidden");
+
+  if(!Array.isArray(data.matches)||data.matches.length===0) {
+   $("no-matches").textContent="Aucun match NHL trouvé pour cette date.";
+   $("no-matches").classList.remove("hidden");
+  } else {
+   data.matches.forEach(renderMatchCard);
+  }
+
+  setStatus(`${data.matches?.length??0} match(s) trouvé(s) • Fuseau Europe/Paris`);
+ } catch(err) {
+  if(err.name==="AbortError")return;
+  $("loading").classList.add("hidden");
+  $("no-matches").textContent=`Impossible de charger le calendrier : ${escapeHtml(err.message)}`;
+  $("no-matches").classList.remove("hidden");
+  setStatus("Erreur de connexion à l'API",true);
+ } finally {
+  if(matchesRequestController?.signal.aborted===false)setRefreshBusy(false);
+ }
+}
+
+function renderMatchCard(match) {
+ const card=document.createElement("button");
+ card.type="button";
+ card.className="w-full rounded-2xl p-3 sm:p-5 flex items-center justify-between gap-1 sm:gap-3 shadow-sm transition text-left";
+
+ const home=escapeHtml(teamLabel(match.home_team,match.home_abbr));
+ const away=escapeHtml(teamLabel(match.away_team,match.away_abbr));
+
+ const homeLogo=encodeURI(String(match.home_logo||`https://assets.nhle.com/logos/nhl/svg/${match.home_abbr}_light.svg`));
+ const awayLogo=encodeURI(String(match.away_logo||`https://assets.nhle.com/logos/nhl/svg/${match.away_abbr}_light.svg`));
+
+ const safeHomeFallback=`https://assets.nhle.com/logos/nhl/svg/${match.home_abbr||"nhl"}_light.svg`;
+ const safeAwayFallback=`https://assets.nhle.com/logos/nhl/svg/${match.away_abbr||"nhl"}_light.svg`;
+
+ card.innerHTML=`
+ <div class="flex flex-col items-center gap-1 flex-1 min-w-0 text-center">
+ <img src="${homeLogo}" alt="" class="w-16 h-16 sm:w-24 sm:h-24 object-contain" loading="lazy">
+ <span class="font-extrabold text-sm sm:text-xl leading-tight break-words">${home}</span>
+ </div>
+ <div class="px-1 sm:px-3 text-center shrink-0">
+ <span class="text-xs sm:text-sm px-2 py-1.5 rounded-full font-bold border whitespace-nowrap">${escapeHtml(stateLabel(match))}</span>
+ <div class="text-[10px] text-slate-400 mt-2 tracking-widest">ANALYSER</div>
+ <div class="text-red-500 text-xl font-bold">VS</div>
+ </div>
+ <div class="flex flex-col items-center gap-1 flex-1 min-w-0 text-center">
+ <img src="${awayLogo}" alt="" class="w-16 h-16 sm:w-24 sm:h-24 object-contain" loading="lazy">
+ <span class="font-extrabold text-sm sm:text-xl leading-tight break-words">${away}</span>
+ </div>`;
+
+ const imgs=card.querySelectorAll("img");
+ setupImageFallback(imgs[0],safeHomeFallback);
+ setupImageFallback(imgs[1],safeAwayFallback);
+
+ card.addEventListener("click",()=>{
+  if(!match.home_abbr||!match.away_abbr) {
+   setStatus("Codes des équipes absents du calendrier.",true);
+   return;
+  }
+  selectedMatch=match;
+  fetchPrediction(match.home_abbr,match.away_abbr);
+ });
+
+ $("matches-container").appendChild(card);
+}
+
+function showPrediction(data) {
+ currentMatchData=data;
+ if(!data||typeof data!=="object") {
+  displayError("Prédiction incomplète pour ce match.");
+  return;
+ }
+
+ const p=data.match_prediction||{};
+ const homeWin=normalizeText(p.home_win_pct_value,50);
+ const awayWin=normalizeText(p.away_win_pct_value,50);
+
+ setWinBar(homeWin,awayWin);
+ $("pred-home-win").textContent=normalizeText(p.home_win_pct);
+ $("pred-draw").textContent=normalizeText(p.draw_or_ot_pct);
+ $("pred-away-win").textContent=normalizeText(p.away_win_pct);
+ $("pred-xg").textContent=`${normalizeText(p.expected_goals_home)} - ${normalizeText(p.expected_goals_away)}`;
+ $("pred-over55").textContent=normalizeText(p.over_5_5_goals_prob);
+ $("pred-score").textContent=p.most_likely_score
+ ? `${normalizeText(p.most_likely_score.home)} - ${normalizeText(p.most_likely_score.away)}`
+ : "—";
+
+ renderPlayers();
+ renderExtraData();
+}
+
+async function fetchPrediction(homeTeam,awayTeam) {
+ if(!homeTeam||!awayTeam||["DOMICILE","EXTERIEUR","HOME","AWAY"].includes(String(homeTeam).toUpperCase())) {
+  openModal();
+  displayError("Équipe non reconnue. Sélectionne un vrai match dans le calendrier.");
+  return;
+ }
+
+ if(predictionRequestController)predictionRequestController.abort();
+ predictionRequestController=new AbortController();
+
+ activeModalTab="home";
+ activeStatType="goals";
+ currentMatchData=null;
+
+ $("modal-teams").textContent=`${teamLabel(selectedMatch&&selectedMatch.home_team,homeTeam)} vs ${teamLabel(selectedMatch&&selectedMatch.away_team,awayTeam)}`;
+
+ resetPredictionModal($("modal-teams").textContent);
+ setStatTabState("goals");
+ setActiveButton("btn-home",true);
+ setActiveButton("btn-away",false);
+ openModal();
+
+ try {
+  const response=await fetch("/predict/goalscorers",{
+   method:"POST",
+   headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({
+    league:"NHL",
+    home_team:homeTeam,
+    away_team:awayTeam
+   }),
+   signal:predictionRequestController.signal
+  });
+
+  const data=await response.json();
+
+  if(!response.ok)throw new Error(data.detail||`Erreur HTTP ${response.status}`);
+  if(!data||!data.match_prediction)throw new Error("Prédiction incomplète pour ce match.");
+
+  showPrediction(data);
+ } catch(err) {
+  if(err.name==="AbortError")return;
+  displayError(err.message||"Erreur lors de la récupération des données.");
+ }
+}
+
+function switchStatType(type) {
+ activeStatType=type;
+ setStatTabState(type);
+ renderPlayers();
+}
+
+function switchModalTab(tab) {
+ activeModalTab=tab;
+ setActiveButton("btn-home",tab==="home");
+ setActiveButton("btn-away",tab==="away");
+ renderPlayers();
+ renderExtraData();
+}
+
+function renderPlayers() {
+ if(!currentMatchData)return;
+
+ const key=activeStatType==="goals"
+ ?(activeModalTab==="home"?"top_goalscorers_home":"top_goalscorers_away")
+ :(activeModalTab==="home"?"top_playmakers_home":"top_playmakers_away");
+
+ const safeKey=activeStatType==="goals"
+ ?(activeModalTab==="home"?"safe_top5_goals_home":"safe_top5_goals_away")
+ :(activeModalTab==="home"?"safe_top5_assists_home":"safe_top5_assists_away");
+
+ const players=currentMatchData[key]||[];
+ const safePlayers=currentMatchData[safeKey]||[];
+
+ const container=$("players-container");
+ const safeContainer=$("safe-top5");
+
+ const confidenceBadge=p=>{
+  const level=p.confidence;
+  const dot=level==="high"?"bg-green-500":level==="medium"?"bg-amber-500":"bg-red-500";
+  const label=level==="high"?"Confiance élevée":level==="medium"?"Confiance moyenne":"Risqué";
+  return `<span class="inline-flex items-center gap-1 text-xs font-semibold text-slate-300"><span class="inline-block w-2.5 h-2.5 rounded-full ${dot}"></span>${label}</span>`;
+ };
+
+ safeContainer.innerHTML=safePlayers.length?`
+ <section class="rounded-xl border p-3">
+ <div class="flex items-center justify-between gap-2 mb-2">
+ <div class="font-extrabold">🛡️ TOP 5 — MODE SÉCURITÉ</div>
+ <span class="text-[11px] font-bold">39.73</span>
+ </div>
+ <div class="text-xs mb-2">Tri selon probabilité estimée, régularité et forme récente.</div>
+ ${safePlayers.map((p,i)=>`
+ <div class="flex items-center justify-between gap-2 py-2 border-t border-emerald-900">
+ <div class="min-w-0">
+ <div class="font-bold text-sm">${i+1}. ${escapeHtml(p.name)}</div>
+ <div class="text-xs">${escapeHtml(p.stats)} • Score sécurité ${p.security_score??"—"}/100</div>
+ </div>
+ <div class="text-right shrink-0">
+ <div class="font-extrabold text-red-400">${escapeHtml(p.prob)}</div>
+ ${confidenceBadge(p)}
+ </div>
+ </div>`).join("")}
+ </section>`:"";
+
+ if(!players.length) {
+  container.innerHTML='<div class="text-center py-8 text-slate-400 rounded-xl">Aucune statistique joueur disponible pour cette équipe pour le moment.</div>';
+  return;
+ }
+
+ container.innerHTML=
+ '<div class="text-xs font-bold uppercase text-slate-400 pt-1">Tous les profils classés par probabilité</div>'+
+ players.map(p=>`
+ <article class="border rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+ <div class="min-w-0">
+ <div class="font-bold text-sm">
+ ${escapeHtml(p.name)}
+ <span class="text-xs bg-slate-700 px-1.5 py-0.5 rounded">${escapeHtml(p.pos)}</span>
+ </div>
+ <div class="text-[13px] mt-1">${escapeHtml(p.stats)} • <span class="font-semibold">${escapeHtml(p.momentum)}</span></div>
+ ${p.recent_form?`
+ <div class="text-xs mt-1">
+ 10 derniers matchs : ${p.recent_form.goals} buts, ${p.recent_form.assists} passes, ${p.recent_form.shots} tirs
+ </div>`:""}
+ <div class="mt-1">${confidenceBadge(p)}
+ <span class="text-[11px]">Score ${p.security_score??"—"}/100</span></div>
+ </div>
+ <div class="text-right shrink-0">
+ <div class="text-red-400 font-extrabold text-base">${escapeHtml(p.prob)}</div>
+ <div class="text-xs">Cote juste ${p.odds?escapeHtml(p.odds):"—"}</div>
+ </div>
+ <div class="w-full h-1.5 rounded-full bg-slate-700" role="img" aria-label="Probabilité ${escapeHtml(p.prob)}">
+ <div class="h-1.5 rounded-full bg-red-500" style="width:${Math.max(0,Math.min(100,Number(p.probability_value)||0))}%"></div>
+ </div>
+ </article>`).join("");
+}
+
+function renderExtraData() {
+ if(!currentMatchData)return;
+
+ const goalies=activeModalTab==="home"?currentMatchData.goalies_home:currentMatchData.goalies_away;
+ const teamStats=currentMatchData.team_stats?.[activeModalTab];
+ const values=currentMatchData.value_analysis||{};
+
+ $("extra-data").innerHTML=`
+ <div class="grid sm:grid-cols-2 gap-3">
+ <div class="border rounded-xl p-3">
+ <div class="font-bold text-sm mb-2">🥅 Gardiens de l'équipe</div>
+ ${(goalies||[]).length
+ ?goalies.map(g=>`
+ <div class="text-xs py-1 border-b border-slate-700">
+ ${escapeHtml(g.name)} — % arrêts : ${g.save_pct??"—"} • GAA : ${g.gaa??"—"}
+ </div>`).join("")
+ :'<div class="text-xs text-slate-400">Données gardiens indisponibles.</div>'}
+ </div>
+
+ <div class="border rounded-xl p-3">
+ <div class="font-bold text-sm mb-2">📊 Statistiques équipe</div>
+ <div class="text-xs text-slate-300">
+ ${teamStats?`${teamStats.goals_per_game} buts/match sur ${teamStats.games} matchs`:"Statistiques indisponibles."}
+ </div>
+ </div>
+ </div>
+
+ <div class="border rounded-xl p-3">
+ <div class="font-bold text-sm mb-2">💎 Analyse de value</div>
+ ${[
+ ["Victoire domicile",values.home_win],
+ ["Victoire extérieur",values.away_win],
+ ["Over 5.5",values.over_5_5]
+ ].map(([label,v])=>`
+ <div class="flex justify-between gap-2 text-xs py-2 border-b border-slate-700 last:border-0">
+ <span>${label}</span>
+ <span class="${v?.value_detected?"text-green-400 font-bold":"text-slate-400"}">
+ ${v?.value_detected?"Value potentielle":(v?.message||"Non calculée")}
+ ${v?.value_percent!=null?` (${v.value_percent}%)`:""}
+ </span>
+ </div>`).join("")}
+ </div>
+
+ <div class="text-xs text-slate-500 text-center">
+ Version ${escapeHtml(currentMatchData.version||"39.73")} • Le score sécurité mesure la régularité des données, jamais une garantie de résultat.
+ </div>`;
 }
 
 function formatParis(iso) {
-  try {
-    return new Date(iso).toLocaleString("fr-FR", {
-      timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"
-    });
-  } catch (e) {
-    return String(iso || "");
-  }
+ try {
+  return new Date(iso).toLocaleString("fr-FR",{
+   timeZone:"Europe/Paris",
+   day:"2-digit",
+   month:"2-digit",
+   hour:"2-digit",
+   minute:"2-digit"
+  });
+ } catch {
+  return String(iso||"");
+ }
 }
 
-async function loadMetrics() {
-  const box = $("metrics-box");
-  box.innerHTML = "";
-  try {
-    const response = await fetch("/api/metrics");
-    if (!response.ok) return;
-    const m = await response.json();
-    const n = m.games_evaluated || 0;
-    const pct = v => (v != null ? `${v} %` : "—");
-    const win = m.match_winner_home ? m.match_winner_home.accuracy_pct : null;
-    const over = m.over_5_5 ? m.over_5_5.accuracy_pct : null;
-    const safeRate = m.safe_top5_goals && m.safe_top5_goals.hit_rate_pct != null ? m.safe_top5_goals.hit_rate_pct : null;
-    const safeN = m.safe_top5_goals ? m.safe_top5_goals.n : 0;
-    const tile = (value, label, sub) => `
-      <div class="bg-white border border-slate-200 rounded-xl p-3 text-center">
-        <div class="text-3xl font-extrabold text-slate-900 leading-tight">${escapeHtml(value)}</div>
-        <div class="text-sm font-bold text-slate-700 mt-1">${label}</div>
-        ${sub ? `<div class="text-xs text-slate-500 mt-0.5">${sub}</div>` : ""}
-      </div>`;
-    box.innerHTML = `
-      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:p-4 space-y-3">
-        <div class="font-extrabold text-lg text-slate-900">📈 Résultats du modèle</div>
-        <div class="grid grid-cols-2 gap-2">
-          ${tile(n, "Matchs évalués", "")}
-          ${tile(pct(win), "Vainqueur trouvé", "")}
-          ${tile(pct(over), "+5.5 buts trouvé", "Plus ou moins de 5,5 buts")}
-          ${tile(pct(safeRate), "Top 5 sécurité", `Buteur qui marque (${safeN} joueurs)`)}
-        </div>
-        ${n < 30 ? '<div class="text-sm text-slate-500">Trop peu de matchs pour conclure : ces chiffres sont encore très bruités.</div>' : ""}
-      </div>`;
-  } catch (e) { /* les métriques sont facultatives */ }
+/* ---------- Historique : pronostics gagnés / perdus et pourcentages ---------- */
+let HIST_GAMES=[];
+let HIST_FILTER="all";
+
+const pctOf=(h,n)=>n?(h/n*100).toFixed(1)+" %":"—";
+const tickOf=hit=>hit===true?"✅":hit===false?"❌":"•";
+
+function renderSummary(s) {
+ const cell=(label,h,n)=>`
+ <div class="hs">
+ <div class="l">${label}</div>
+ <div class="v">${pctOf(h,n)}</div>
+ <div class="d">${n?`${h} sur ${n}`:"pas encore de résultat"}</div>
+ </div>`;
+ $("metrics-box").innerHTML=`
+ <div class="rounded-xl border p-3">
+ <div class="font-bold text-sm mb-2">📈 Réussite du modèle <span class="text-xs font-normal text-slate-400">(${s.games} dernier${s.games>1?"s":""} match${s.games>1?"s":""} terminé${s.games>1?"s":""})</span></div>
+ <div class="grid grid-cols-2 gap-2">
+ ${cell("Vainqueur trouvé",s.w_hit,s.w_n)}
+ ${cell("Plus / moins de 5,5 buts",s.o_hit,s.o_n)}
+ ${cell("Buteurs top 5",s.g_hit,s.g_n)}
+ ${cell("Passeurs top 5",s.a_hit,s.a_n)}
+ </div>
+ ${s.games<30?'<div class="text-xs text-slate-400 mt-2">Peu de matchs pour l\'instant : ces pourcentages bougent encore beaucoup.</div>':""}
+ </div>`;
+}
+
+function renderFilters() {
+ const done=HIST_GAMES.filter(g=>g.status==="done");
+ const won=done.filter(g=>g.winner.hit===true).length;
+ const lost=done.filter(g=>g.winner.hit===false).length;
+ const pend=HIST_GAMES.filter(g=>g.status==="pending").length;
+ const defs=[["all","Tous ("+HIST_GAMES.length+")"],["won","✅ Gagnés ("+won+")"],["lost","❌ Perdus ("+lost+")"],["pending","⏳ En attente ("+pend+")"]];
+ $("history-filters").innerHTML=defs.map(([k,label])=>`<button type="button" class="hf${HIST_FILTER===k?" on":""}" data-f="${k}">${label}</button>`).join("");
+ $("history-filters").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
+  HIST_FILTER=b.dataset.f;
+  renderFilters();
+  renderHistory();
+ }));
+}
+
+function chipsOf(players) {
+ return players.map(p=>`<span class="hchip ${p.hit===true?"y":p.hit===false?"n":""}">${tickOf(p.hit)} ${escapeHtml(p.name)} <span style="opacity:.7">${escapeHtml(p.team)}</span>${p.hit===null?" (n'a pas joué)":""}</span>`).join("");
+}
+
+function historyCard(g,index) {
+ const done=g.status==="done";
+ const title=done
+ ?`${escapeHtml(g.home)} <b>${g.score[0]}</b> – <b>${g.score[1]}</b> ${escapeHtml(g.away)}`
+ :escapeHtml(g.match);
+ const pill=!done?'<span class="hpill p">⏳ EN ATTENTE</span>'
+ :g.winner.hit?'<span class="hpill w">✅ GAGNÉ</span>':'<span class="hpill l">❌ PERDU</span>';
+ const overLine=done
+ ?`Buts : <b>${g.over55.pick==="plus"?"Plus":"Moins"} de 5,5</b> (${g.over55.pct} %) → ${g.over55.total} buts ${tickOf(g.over55.hit)}`
+ :`Buts : <b>${g.over55.pick==="plus"?"Plus":"Moins"} de 5,5</b> (${g.over55.pct} %)`;
+ const players=done&&(g.goals.players.length||g.assists.players.length)?`
+ <details class="mt-2">
+ <summary class="text-xs cursor-pointer" style="color:#5fd4ff">Voir les joueurs pronostiqués</summary>
+ ${g.goals.players.length?`<div class="text-xs mt-2 mb-1 font-bold">🎯 Buteurs</div>${chipsOf(g.goals.players)}`:""}
+ ${g.assists.players.length?`<div class="text-xs mt-1 mb-1 font-bold">🤝 Passeurs</div>${chipsOf(g.assists.players)}`:""}
+ </details>`:"";
+ return `
+ <article class="hc">
+ <button type="button" class="head" data-i="${index}">
+ <div class="flex items-center justify-between gap-2">
+ <div class="font-extrabold text-base sm:text-lg min-w-0">${title}</div>
+ ${pill}
+ </div>
+ <div class="text-xs text-slate-400 mt-0.5">${escapeHtml(formatParis(g.date))} • touche pour voir l'analyse complète</div>
+ </button>
+ <div class="text-sm mt-2 space-y-1">
+ <div>Favori : <b>${escapeHtml(g.winner.pick)}</b> (${g.winner.pct} %) ${done?tickOf(g.winner.hit):""}</div>
+ <div>${overLine}</div>
+ ${done?`<div>Buteurs top 5 : <b>${g.goals.hits}/${g.goals.n}</b> <span class="text-slate-400">(${pctOf(g.goals.hits,g.goals.n)})</span> • Passeurs top 5 : <b>${g.assists.hits}/${g.assists.n}</b> <span class="text-slate-400">(${pctOf(g.assists.hits,g.assists.n)})</span></div>`:""}
+ </div>
+ ${players}
+ </article>`;
+}
+
+function renderHistory() {
+ const list=$("history-list");
+ const rows=HIST_GAMES.map((g,i)=>[g,i]).filter(([g])=>
+  HIST_FILTER==="all"
+  ||(HIST_FILTER==="won"&&g.status==="done"&&g.winner.hit===true)
+  ||(HIST_FILTER==="lost"&&g.status==="done"&&g.winner.hit===false)
+  ||(HIST_FILTER==="pending"&&g.status==="pending"));
+ if(!rows.length) {
+  list.innerHTML='<div class="text-center py-8 text-slate-400 rounded-xl">Aucun match dans cette catégorie pour le moment.</div>';
+  return;
+ }
+ list.innerHTML=rows.map(([g,i])=>historyCard(g,i)).join("");
+ list.querySelectorAll(".head").forEach(b=>b.addEventListener("click",()=>{
+  const g=HIST_GAMES[+b.dataset.i];
+  if(g)openHistoryDetail({id:g.id,match_name:g.match});
+ }));
 }
 
 async function loadHistory() {
-  const list = $("history-list");
-  list.innerHTML = '<div class="text-center py-8 text-slate-500">Chargement…</div>';
-  loadMetrics();
-  try {
-    const response = await fetch("/api/history?limit=50");
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || `Erreur HTTP ${response.status}`);
+ const list=$("history-list");
+ list.innerHTML='<div class="text-center py-8 text-slate-400">Chargement…</div>';
+ $("metrics-box").innerHTML="";
+ $("history-filters").innerHTML="";
 
-    if (!data.predictions || !data.predictions.length) {
-      list.innerHTML = '<div class="text-center py-8 text-slate-500 bg-slate-50 rounded-xl">Aucune prédiction enregistrée pour le moment.</div>';
-      return;
-    }
+ try {
+  const response=await fetch("/api/results?limit=40");
+  const data=await response.json();
 
-    list.innerHTML = "";
-    data.predictions.forEach(row => {
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "w-full text-left bg-white border border-slate-200 rounded-xl p-3 hover:border-red-300 transition";
-      item.innerHTML = `
-        <div class="flex items-center justify-between gap-2">
-          <div class="font-extrabold text-base sm:text-lg text-slate-900">${escapeHtml(row.match_name)}</div>
-          <div class="text-xs text-slate-400 shrink-0">${escapeHtml(formatParis(row.created_at))}</div>
-        </div>
-        <div class="text-xs text-slate-600 mt-1">
-          Victoire dom. <b>${row.home_win ?? "—"}%</b> • ext. <b>${row.away_win ?? "—"}%</b>
-          • +5.5 : <b>${row.over_55 != null ? Math.round(row.over_55) + "%" : "—"}</b> ${mark(row.over_ok)}
-        </div>
-        ${row.home_score != null ? `<div class="text-sm font-bold text-slate-800 mt-1">Final ${row.home_score} - ${row.away_score} • Vainqueur ${mark(row.winner_ok)}</div>` : '<div class="text-xs text-slate-400 mt-1">Résultat à venir</div>'}`;
-      item.addEventListener("click", () => openHistoryDetail(row));
-      list.appendChild(item);
-    });
-  } catch (err) {
-    list.innerHTML = `<div class="text-center py-8 text-red-600">Impossible de charger l'historique : ${escapeHtml(err.message)}</div>`;
+  if(!response.ok)throw new Error(data.detail||`Erreur HTTP ${response.status}`);
+
+  HIST_GAMES=data.games||[];
+  if(!HIST_GAMES.length) {
+   list.innerHTML='<div class="text-center py-8 rounded-xl">Aucune prédiction enregistrée pour le moment.</div>';
+   return;
   }
+
+  renderSummary(data.summary);
+  renderFilters();
+  renderHistory();
+ } catch(err) {
+  list.innerHTML=`<div class="text-center py-8 text-red-400">Impossible de charger l'historique : ${escapeHtml(err.message)}</div>`;
+ }
 }
 
 async function openHistoryDetail(row) {
-  closeHistory();
-  selectedMatch = null;
-  activeModalTab = "home";
-  activeStatType = "goals";
-  currentMatchData = null;
-  $("modal-teams").textContent = row.match_name;
-  ["pred-home-win","pred-draw","pred-away-win","pred-xg","pred-over55","pred-score"].forEach(id => { $(id).textContent = "…"; });
-  hideResult();
-  setWinBar(50, 50);
-  $("players-container").innerHTML = '<div class="text-center py-10 text-slate-500">Chargement de la prédiction…</div>';
-  $("extra-data").innerHTML = "";
-  $("safe-top5").innerHTML = "";
-  setActiveButton("btn-home", true);
-  setActiveButton("btn-away", false);
-  openModal();
-  try {
-    const response = await fetch(`/api/history/${encodeURIComponent(row.id)}`);
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || `Erreur HTTP ${response.status}`);
-    showPrediction(data);
-  } catch (err) {
-    displayError(err.message || "Impossible de charger cette prédiction.");
-  }
+ closeHistory();
+ selectedMatch=null;
+ activeModalTab="home";
+ activeStatType="goals";
+ currentMatchData=null;
+
+ $("modal-teams").textContent=row.match_name;
+
+ ["pred-home-win","pred-draw","pred-away-win","pred-xg","pred-over55","pred-score"].forEach(id=>{
+  $(id).textContent="…";
+ });
+
+ setWinBar(50,50);
+ $("players-container").innerHTML='<div class="text-center py-10 text-slate-400">Chargement de la prédiction…</div>';
+ $("extra-data").innerHTML="";
+ $("safe-top5").innerHTML="";
+ setActiveButton("btn-home",true);
+ setActiveButton("btn-away",false);
+ setStatTabState("goals");
+ openModal();
+
+ try {
+  const response=await fetch(`/api/history/${encodeURIComponent(row.id)}`);
+  const data=await response.json();
+
+  if(!response.ok)throw new Error(data.detail||`Erreur HTTP ${response.status}`);
+  showPrediction(data);
+ } catch(err) {
+  displayError(err.message||"Impossible de charger cette prédiction.");
+ }
 }
 
-$("close-modal").addEventListener("click", closeModal);
-$("close-history").addEventListener("click", closeHistory);
-$("history-btn").addEventListener("click", openHistory);
+$("close-modal").addEventListener("click",closeModal);
+$("close-history").addEventListener("click",closeHistory);
+$("history-btn").addEventListener("click",openHistory);
 
-$("modal").addEventListener("click", e => {
-  if (e.target === $("modal")) closeModal();
-});
-$("history-modal").addEventListener("click", e => {
-  if (e.target === $("history-modal")) closeHistory();
+$("modal").addEventListener("click",e=>{
+ if(e.target===$("modal"))closeModal();
 });
 
-$("tab-type-goals").addEventListener("click", () => switchStatType("goals"));
-$("tab-type-assists").addEventListener("click", () => switchStatType("assists"));
-$("tab-type-points").addEventListener("click", () => switchStatType("points"));
-$("btn-home").addEventListener("click", () => switchModalTab("home"));
-$("btn-away").addEventListener("click", () => switchModalTab("away"));
+$("history-modal").addEventListener("click",e=>{
+ if(e.target===$("history-modal"))closeHistory();
+});
 
-$("refresh-btn").addEventListener("click", () => loadNhlMatches(datePicker.value));
+$("tab-type-goals").addEventListener("click",()=>switchStatType("goals"));
+$("tab-type-assists").addEventListener("click",()=>switchStatType("assists"));
+$("btn-home").addEventListener("click",()=>switchModalTab("home"));
+$("btn-away").addEventListener("click",()=>switchModalTab("away"));
+$("refresh-btn").addEventListener("click",()=>loadNhlMatches(datePicker.value));
 
-datePicker.addEventListener("change", e => loadNhlMatches(e.target.value));
+datePicker.addEventListener("change",e=>{
+ if(!isValidNhlDate(e.target.value)) {
+  setStatus("Date invalide",true);
+  return;
+ }
+ loadNhlMatches(e.target.value);
+});
 
-document.addEventListener("keydown", e => {
-  if (e.key === "Escape") { closeModal(); closeHistory(); }
+document.addEventListener("keydown",e=>{
+ if(e.key==="Escape") {
+  closeModal();
+  closeHistory();
+ }
 });
 
 loadNhlMatches(datePicker.value);
