@@ -4,6 +4,7 @@ import json
 import time
 import math
 import sqlite3
+import asyncio
 import logging
 import re
 import secrets
@@ -21,12 +22,12 @@ from pydantic import BaseModel, Field
 from scipy.stats import nbinom, poisson
 
 # ============================================================
-# NHL GOALSCORER ANALYTICS - VERSION 39.77
+# NHL GOALSCORER ANALYTICS - VERSION 39.72
 # Adapté pour Vercel : plus de boucle de fond au démarrage.
 # Les mises à jour automatiques passent par GitHub Actions.
 # ============================================================
 
-VERSION = "39.77"
+VERSION = "39.72"
 DB_FILE = os.getenv("DB_FILE", "nhl_history.db")
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()   # si défini : PostgreSQL externe (ex. Neon), sinon SQLite local
 USE_PG = bool(DATABASE_URL)
@@ -37,7 +38,6 @@ MAX_WORKERS = 8
 CRON_SECRET = os.getenv("CRON_SECRET", "")              # si défini, /api/cron exige ?key=...
 AUTO_PREDICT_HOURS_AHEAD = int(os.getenv("AUTO_PREDICT_HOURS_AHEAD", "10"))
 SYNC_MIN_INTERVAL_HOURS = 6
-DUPLICATE_WINDOW_MIN = 60   # une même affiche n'est enregistrée qu'une fois par heure
 LEAGUE_SH_PCT = 0.105   # % de réussite moyen des tirs (régression vers la moyenne)
 SH_PRIOR_SHOTS = 60      # poids de la moyenne ligue, en tirs
 TOI_FACTOR_RANGE = (0.90, 1.10)
@@ -233,13 +233,6 @@ def save_prediction(result):
     try:
         p = result["match_prediction"]
         with db_connection() as db:
-            last = db.execute(
-                "SELECT created_at FROM predictions WHERE home_team=? AND away_team=? ORDER BY id DESC LIMIT 1",
-                (result["home_team"], result["away_team"])
-            ).fetchone()
-            if last and datetime.now(timezone.utc) - datetime.fromisoformat(last["created_at"]) \
-                    < timedelta(minutes=DUPLICATE_WINDOW_MIN):
-                return  # déjà enregistrée il y a moins d'une heure : on évite les doublons
             db.execute("""
                 INSERT INTO predictions
                 (created_at, match_name, home_team, away_team, home_xg, away_xg,
@@ -509,17 +502,12 @@ def calculate_security_profile(probability_pct, games, recent_form, metric):
     """Score de régularité statistique, pas une garantie de résultat."""
     games_factor = min(max(int(games or 0), 0) / 25.0, 1.0)
     if recent_form:
-        if metric == "point":
-            recent_count = (recent_form.get("goals", 0) or 0) + (recent_form.get("assists", 0) or 0)
-            activity_factor = min(recent_count / 5.0, 1.0)
+        recent_count = recent_form.get("goals" if metric == "goal" else "assists", 0)
+        activity_factor = min(recent_count / (3.0 if metric == "goal" else 4.0), 1.0)
+        if metric == "goal":
             shot_factor = min((recent_form.get("shots_per_game", 0) or 0) / 3.0, 1.0)
         else:
-            recent_count = recent_form.get("goals" if metric == "goal" else "assists", 0)
-            activity_factor = min(recent_count / (3.0 if metric == "goal" else 4.0), 1.0)
-            if metric == "goal":
-                shot_factor = min((recent_form.get("shots_per_game", 0) or 0) / 3.0, 1.0)
-            else:
-                shot_factor = min((recent_form.get("assists_per_game", 0) or 0) / 0.5, 1.0)
+            shot_factor = min((recent_form.get("assists_per_game", 0) or 0) / 0.5, 1.0)
     else:
         activity_factor = 0.0
         shot_factor = 0.0
@@ -580,7 +568,7 @@ def fetch_nhl_players(team_str, metric="goal", opponent_factor=1.0,
         pos = p.get("positionCode", "")
         if metric == "goal" and pos not in ("L", "R", "C", "F"):
             continue
-        if metric in ("assist", "point") and pos not in ("L", "R", "C", "F", "D"):
+        if metric == "assist" and pos not in ("L", "R", "C", "F", "D"):
             continue
         if int(p.get("gamesPlayed", 0) or 0) <= 0:
             continue
@@ -594,29 +582,15 @@ def fetch_nhl_players(team_str, metric="goal", opponent_factor=1.0,
         games = int(p.get("gamesPlayed", 0) or 0)
         player_id = p.get("playerId") or p.get("id")
         recent = forms.get(player_id)
-        shots_total = int(p.get("shots", 0) or 0)
-        toi_season = p.get("avgTimeOnIcePerGame")
-        if metric == "point":
-            # Points = buts + passes : on additionne les deux taux attendus (événements supposés indépendants)
-            pg = calculate_player_probability(goals, assists, games, recent, opponent_factor * goalie_factor,
-                                              team_factor, "goal", shots=shots_total, season_toi_seconds=toi_season)
-            pa = calculate_player_probability(goals, assists, games, recent, opponent_factor * goalie_factor,
-                                              team_factor, "assist", shots=shots_total, season_toi_seconds=toi_season)
-            rate = pg["expected_rate"] + pa["expected_rate"]
-            prob = clamp(1 - math.exp(-rate), 0.001, 0.95)
-            pred = {"probability": round(prob * 100, 1), "fair_odds": probability_to_odds(prob),
-                    "expected_rate": round(rate, 3), "toi_factor": pg["toi_factor"], "prob_2plus_goals": None}
-            total, label = goals + assists, "points (but + passe)"
-            recent_total = (recent["goals"] + recent["assists"]) if recent else 0
-        else:
-            pred = calculate_player_probability(
-                goals, assists, games, recent,
-                opponent_factor * goalie_factor, team_factor, metric,
-                shots=shots_total, season_toi_seconds=toi_season
-            )
-            total = goals if metric == "goal" else assists
-            label = "buts" if metric == "goal" else "passes décisives"
-            recent_total = recent["goals" if metric == "goal" else "assists"] if recent else 0
+        pred = calculate_player_probability(
+            goals, assists, games, recent,
+            opponent_factor * goalie_factor, team_factor, metric,
+            shots=int(p.get("shots", 0) or 0),
+            season_toi_seconds=p.get("avgTimeOnIcePerGame")
+        )
+        total = goals if metric == "goal" else assists
+        label = "buts" if metric == "goal" else "passes décisives"
+        recent_total = recent["goals" if metric == "goal" else "assists"] if recent else 0
         security = calculate_security_profile(pred["probability"], games, recent, metric)
         output.append({
             "player_id": player_id, "name": _player_name(p), "pos": pos,
@@ -721,12 +695,7 @@ def calculate_match_model(home_xg, away_xg, ot_home_share=0.5):
     home_final = home_reg + draw * ot_home_share
     away_final = away_reg + draw * (1 - ot_home_share)
     total = home_final + away_final or 1
-    def team_lines(pmf):
-        # P(l'équipe marque au moins k buts) : plus de 1.5 -> k=2, 2.5 -> k=3, 3.5 -> k=4
-        return {"over_1_5": round(sum(pmf[2:]) * 100, 1), "over_2_5": round(sum(pmf[3:]) * 100, 1),
-                "over_3_5": round(sum(pmf[4:]) * 100, 1)}
     return {
-        "team_totals": {"home": team_lines(home_pmf), "away": team_lines(away_pmf)},
         "home_win_pct_value": round(home_final / total * 100, 1),
         "away_win_pct_value": round(away_final / total * 100, 1),
         "draw_or_ot_pct_value": round(draw * 100, 1),
@@ -835,8 +804,6 @@ def build_match_prediction(req):
     away_scorers = fetch_nhl_players(away_abbr, "goal", away_factor, away_team_factor, home_stats)
     home_playmakers = fetch_nhl_players(home_abbr, "assist", home_factor, home_team_factor, away_stats)
     away_playmakers = fetch_nhl_players(away_abbr, "assist", away_factor, away_team_factor, home_stats)
-    home_points = fetch_nhl_players(home_abbr, "point", home_factor, home_team_factor, away_stats)
-    away_points = fetch_nhl_players(away_abbr, "point", away_factor, away_team_factor, home_stats)
     home_goalies, away_goalies = goalie_analysis(home_stats), goalie_analysis(away_stats)
 
     # Top 5 MODE SÉCURITÉ : classement par score de régularité, sans promettre un résultat.
@@ -860,10 +827,8 @@ def build_match_prediction(req):
         },
         "top_goalscorers_home": home_scorers, "top_goalscorers_away": away_scorers,
         "top_playmakers_home": home_playmakers, "top_playmakers_away": away_playmakers,
-        "top_points_home": home_points, "top_points_away": away_points,
         "safe_top5_goals_home": safe(home_scorers), "safe_top5_goals_away": safe(away_scorers),
         "safe_top5_assists_home": safe(home_playmakers), "safe_top5_assists_away": safe(away_playmakers),
-        "safe_top5_points_home": safe(home_points), "safe_top5_points_away": safe(away_points),
         "goalies_home": home_goalies, "goalies_away": away_goalies,
         "roster_home": fetch_team_roster(home_abbr), "roster_away": fetch_team_roster(away_abbr),
         "team_stats": {
@@ -895,41 +860,6 @@ def build_match_prediction(req):
     }
     save_prediction(result)
     return result
-
-# ---------------------- VERDICT ✅/❌ ------------------------
-
-def _is_shootout(game):
-    """Le vainqueur d'une séance de tirs au but reçoit +1 but au score final : on l'exclut du total de buts."""
-    outcome = (game.get("gameOutcome") or {}).get("lastPeriodType")
-    period = (game.get("periodDescriptor") or {}).get("periodType")
-    return "SO" in (outcome, period)
-
-def evaluate_pick(home_win, away_win, over_pct, home_score, away_score, shootout=False):
-    """Compare un pronostic au résultat. None = pas encore de résultat."""
-    if home_score is None or away_score is None:
-        return {"winner_ok": None, "over_ok": None, "total_goals": None}
-    winner_ok = None
-    if home_win is not None and away_win is not None:
-        winner_ok = (float(home_win) >= float(away_win)) == (home_score > away_score)
-    total = int(home_score) + int(away_score) - (1 if shootout else 0)
-    over_ok = None if over_pct is None else ((float(over_pct) >= 50) == (total >= 6))
-    return {"winner_ok": winner_ok, "over_ok": over_ok, "total_goals": total}
-
-def _find_prediction_for_match(home_abbr, away_abbr, start_dt):
-    """Dernière prédiction faite AVANT le coup d'envoi (dans les 48 h précédentes), ou None."""
-    try:
-        with db_connection() as db:
-            rows = db.execute(
-                "SELECT id, created_at, home_win, away_win, over_55 FROM predictions "
-                "WHERE home_team=? AND away_team=? ORDER BY id DESC LIMIT 6", (home_abbr, away_abbr)
-            ).fetchall()
-        for row in rows:
-            created = datetime.fromisoformat(row["created_at"])
-            if start_dt - timedelta(hours=48) <= created < start_dt:
-                return dict(row)
-    except Exception:
-        logger.exception("Recherche de prédiction pour %s-%s", home_abbr, away_abbr)
-    return None
 
 # ---------------------- SCHEDULE ----------------------------
 
@@ -976,18 +906,7 @@ def get_nhl_matches_for_date(date):
                     display = f'EN DIRECT ({home.get("score", 0)} - {away.get("score", 0)})'
                 else:
                     display = local_dt.strftime("%H:%M")
-                finished = state in ("FINAL", "OFF")
-                hs, as_ = home.get("score"), away.get("score")
-                prediction = _find_prediction_for_match(home.get("abbrev", ""), away.get("abbrev", ""), dt)
-                if prediction:
-                    verdict = evaluate_pick(prediction["home_win"], prediction["away_win"], prediction["over_55"],
-                                            hs if finished else None, as_ if finished else None, _is_shootout(game))
-                    prediction = {"id": prediction["id"], "home_win": prediction["home_win"],
-                                  "away_win": prediction["away_win"], "over_55": prediction["over_55"],
-                                  "winner_ok": verdict["winner_ok"], "over_ok": verdict["over_ok"]}
                 matches.append({
-                    "finished": finished, "home_score": hs if finished else None,
-                    "away_score": as_ if finished else None, "prediction": prediction,
                     "game_id": game_id,
                     "home_team": _localized_team_name(home),
                     "away_team": _localized_team_name(away),
@@ -1069,32 +988,16 @@ def evaluate_pending(limit=50):
             FROM predictions p LEFT JOIN prediction_outcomes o ON o.prediction_id = p.id
             WHERE o.prediction_id IS NULL ORDER BY p.id DESC LIMIT ?
         """, (int(clamp(limit, 1, 200)),)).fetchall()
-    evaluated, pending, expired, errors = 0, 0, 0, 0
+    evaluated, pending, errors = 0, 0, 0
     for row in rows:
         try:
             game = _find_final_game(row["home_team"], row["away_team"], row["created_at"])
             if not game:
-                age = datetime.now(timezone.utc) - datetime.fromisoformat(row["created_at"])
-                if age > timedelta(hours=72):
-                    # Aucun match terminé trouvé après 3 jours (prédiction faite après le coup d'envoi,
-                    # match reporté...) : on la met de côté pour qu'elle ne bloque plus l'évaluation.
-                    with db_connection() as db:
-                        db.execute("""
-                            INSERT INTO prediction_outcomes
-                            (prediction_id, game_id, evaluated_at, home_score, away_score, players_json)
-                            VALUES (?, 'expired', ?, NULL, NULL, '{}')
-                            ON CONFLICT (prediction_id) DO NOTHING
-                        """, (row["id"], datetime.now(timezone.utc).isoformat()))
-                        db.commit()
-                    expired += 1
-                else:
-                    pending += 1
+                pending += 1
                 continue
             game_id = str(game.get("id"))
             box = nhl_get(f"gamecenter/{game_id}/boxscore")
             players = _parse_boxscore(box)
-            if _is_shootout(game):
-                players["_so"] = 1
             with db_connection() as db:
                 db.execute("""
                     INSERT INTO prediction_outcomes
@@ -1113,7 +1016,7 @@ def evaluate_pending(limit=50):
         except Exception as exc:
             errors += 1
             logger.warning("Évaluation prédiction %s : %s", row["id"], exc)
-    return {"evaluated": evaluated, "pending": pending, "expired": expired, "errors": errors}
+    return {"evaluated": evaluated, "pending": pending, "errors": errors}
 
 def _calibration(pairs):
     """pairs = [(probabilité 0-1, résultat 0/1)] -> Brier, taux de réussite et calibration par tranche."""
@@ -1140,7 +1043,6 @@ def compute_metrics():
         rows = db.execute("""
             SELECT p.id, p.prediction_json, o.game_id, o.home_score, o.away_score, o.players_json
             FROM prediction_outcomes o JOIN predictions p ON p.id = o.prediction_id
-            WHERE o.game_id <> 'expired'
             ORDER BY p.id DESC
         """).fetchall()
     latest = {}
@@ -1148,7 +1050,7 @@ def compute_metrics():
         latest.setdefault(row["game_id"], row)
 
     winner, over55 = [], []
-    pools = {"goal": [], "assist": [], "safe_goal": [], "safe_assist": [], "point": [], "safe_point": []}
+    pools = {"goal": [], "assist": [], "safe_goal": [], "safe_assist": []}
     for row in latest.values():
         pred = json.loads(row["prediction_json"])
         mp = pred.get("match_prediction", {})
@@ -1156,8 +1058,8 @@ def compute_metrics():
         if mp.get("home_win_pct_value") is not None:
             winner.append((mp["home_win_pct_value"] / 100, 1 if row["home_score"] > row["away_score"] else 0))
         if mp.get("over_5_5_goals_prob_value") is not None:
-            total_goals = row["home_score"] + row["away_score"] - (1 if actual.get("_so") else 0)
-            over55.append((mp["over_5_5_goals_prob_value"] / 100, 1 if total_goals >= 6 else 0))
+            over55.append((mp["over_5_5_goals_prob_value"] / 100,
+                           1 if row["home_score"] + row["away_score"] >= 6 else 0))
         for side in ("home", "away"):
             for key, metric, idx in (("top_goalscorers", "goal", 0), ("top_playmakers", "assist", 1)):
                 for pl in pred.get(f"{key}_{side}", []) or []:
@@ -1169,11 +1071,6 @@ def compute_metrics():
                     stat = actual.get(str(pl.get("player_id")))
                     if stat is not None:
                         pools[metric].append((pl["probability_value"] / 100, 1 if stat[idx] >= 1 else 0))
-            for key, metric in (("top_points", "point"), ("safe_top5_points", "safe_point")):
-                for pl in pred.get(f"{key}_{side}", []) or []:
-                    stat = actual.get(str(pl.get("player_id")))
-                    if stat is not None:
-                        pools[metric].append((pl["probability_value"] / 100, 1 if stat[0] + stat[1] >= 1 else 0))
 
     def hit_rate(pairs):
         return {"n": len(pairs), "hit_rate_pct": round(sum(y for _, y in pairs) / len(pairs) * 100, 1)} if pairs else {"n": 0}
@@ -1182,14 +1079,11 @@ def compute_metrics():
         "games_evaluated": len(latest),
         "match_winner_home": {**_calibration(winner),
                               "accuracy_pct": round(sum(1 for p, y in winner if (p >= .5) == bool(y)) / len(winner) * 100, 1) if winner else None},
-        "over_5_5": {**_calibration(over55),
-                     "accuracy_pct": round(sum(1 for p, y in over55 if (p >= .5) == bool(y)) / len(over55) * 100, 1) if over55 else None},
+        "over_5_5": _calibration(over55),
         "goalscorer_calibration": _calibration(pools["goal"]),
         "playmaker_calibration": _calibration(pools["assist"]),
         "safe_top5_goals": hit_rate(pools["safe_goal"]),
         "safe_top5_assists": hit_rate(pools["safe_assist"]),
-        "points_calibration": _calibration(pools["point"]),
-        "safe_top5_points": hit_rate(pools["safe_point"]),
         "notes": "Brier plus bas = mieux. Comparer à brier_constant_baseline : en dessous, le modèle apporte de l'information. "
                  "Il faut plusieurs centaines de joueurs évalués avant de tirer une conclusion."
     }
@@ -1332,54 +1226,18 @@ def get_history(limit: int = 50):
     limit = int(clamp(limit, 1, 500))
     with db_connection() as db:
         rows = db.execute(
-            "SELECT p.id, p.created_at, p.match_name, p.home_team, p.away_team, p.home_xg, p.away_xg, "
-            "p.home_win, p.away_win, p.over_55, o.home_score, o.away_score, o.players_json "
-            "FROM predictions p LEFT JOIN prediction_outcomes o ON o.prediction_id = p.id "
-            "ORDER BY p.id DESC LIMIT ?", (limit,)
+            "SELECT id, created_at, match_name, home_team, away_team, home_xg, away_xg, "
+            "home_win, away_win, over_55 FROM predictions ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
-    predictions = []
-    for row in rows:
-        item = dict(row)
-        raw = item.pop("players_json", None)
-        shootout = False
-        if raw:
-            try:
-                shootout = bool(json.loads(raw).get("_so"))
-            except ValueError:
-                pass
-        item.update(evaluate_pick(item["home_win"], item["away_win"], item["over_55"],
-                                  item["home_score"], item["away_score"], shootout))
-        predictions.append(item)
-    kept = []
-    for item in predictions:  # du plus récent au plus ancien
-        created = datetime.fromisoformat(item["created_at"])
-        if any(k["match_name"] == item["match_name"]
-               and abs(datetime.fromisoformat(k["created_at"]) - created) < timedelta(minutes=DUPLICATE_WINDOW_MIN)
-               for k in kept):
-            continue
-        kept.append(item)
-    return {"count": len(kept), "predictions": kept}
+    return {"count": len(rows), "predictions": [dict(row) for row in rows]}
 
 @app.get("/api/history/{prediction_id}")
 def get_history_detail(prediction_id: int):
     with db_connection() as db:
         row = db.execute("SELECT prediction_json FROM predictions WHERE id=?", (prediction_id,)).fetchone()
-        out = db.execute("SELECT home_score, away_score, players_json FROM prediction_outcomes "
-                         "WHERE prediction_id=?", (prediction_id,)).fetchone() if row else None
     if not row:
         raise HTTPException(status_code=404, detail="Prédiction introuvable")
-    data = json.loads(row["prediction_json"])
-    if out and out["home_score"] is not None:
-        players = json.loads(out["players_json"])
-        shootout = bool(players.pop("_so", 0))
-        mp = data.get("match_prediction", {})
-        data["outcome"] = {
-            "home_score": out["home_score"], "away_score": out["away_score"], "shootout": shootout,
-            "players": players,
-            **evaluate_pick(mp.get("home_win_pct_value"), mp.get("away_win_pct_value"),
-                            mp.get("over_5_5_goals_prob_value"), out["home_score"], out["away_score"], shootout)
-        }
-    return data
+    return json.loads(row["prediction_json"])
 
 @app.get("/api/predict/auto-sync")
 def auto_sync():
@@ -1402,11 +1260,6 @@ def api_cron(key: Optional[str] = None):
         raise HTTPException(status_code=403, detail="Clé invalide.")
     if JOB_LOCK.locked():
         return {"status": "already_running", **JOB_STATE}
-    if os.getenv("VERCEL"):
-        # Sur Vercel, une tâche lancée en arrière-plan est gelée dès que la réponse part :
-        # on exécute donc tout avant de répondre.
-        run_cron_job()
-        return {"status": "done", **JOB_STATE}
     threading.Thread(target=run_cron_job, daemon=True).start()
     return {"status": "started"}
 
@@ -1440,6 +1293,114 @@ def football_matches(date: Optional[str] = None):
         "date": date, "matches": [], "status": "football_not_configured",
         "message": "Le module football n'est pas encore raccordé à une source de données."
     }
+
+# ---------------------- RÉSULTATS : PRONOSTICS GAGNÉS / PERDUS ----
+
+def _day(value):
+    return str(value)[:10]
+
+def build_results(limit=40):
+    """Historique avec le résultat réel de chaque pronostic (gagné / perdu) et des pourcentages."""
+    limit = int(clamp(limit, 1, 100))
+    with db_connection() as db:
+        rows = db.execute("""
+            SELECT p.id, p.created_at, p.match_name, p.home_team, p.away_team,
+                   p.home_win, p.away_win, p.over_55,
+                   o.game_id, o.home_score, o.away_score, o.players_json
+            FROM predictions p
+            LEFT JOIN prediction_outcomes o ON o.prediction_id = p.id
+            ORDER BY p.id DESC LIMIT ?
+        """, (limit * 4,)).fetchall()
+    rows = [dict(r) for r in rows]
+
+    # Une seule ligne par match : la plus récente prédiction (les doublons sont ignorés)
+    chosen, seen_games, done_days = [], set(), set()
+    for r in rows:
+        if r["game_id"] is None or r["game_id"] in seen_games:
+            continue
+        seen_games.add(r["game_id"])
+        chosen.append(r)
+        done_days.add((r["home_team"], r["away_team"], _day(r["created_at"])))
+
+    # Matchs encore en attente (prédictions récentes sans résultat)
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+    seen_pending = set()
+    for r in rows:
+        if r["game_id"] is not None or str(r["created_at"]) < cutoff:
+            continue
+        d0 = datetime.strptime(_day(r["created_at"]), "%Y-%m-%d")
+        near = {(r["home_team"], r["away_team"], (d0 + timedelta(days=k)).strftime("%Y-%m-%d"))
+                for k in (-1, 0, 1)}
+        key = (r["home_team"], r["away_team"], _day(r["created_at"]))
+        if near & done_days or key in seen_pending:
+            continue
+        seen_pending.add(key)
+        chosen.append(r)
+
+    chosen.sort(key=lambda r: r["id"], reverse=True)
+    chosen = chosen[:limit]
+
+    # Le détail des joueurs est dans prediction_json : on ne le charge que pour les matchs retenus
+    preds = {}
+    ids = [r["id"] for r in chosen]
+    if ids:
+        marks = ",".join("?" for _ in ids)
+        with db_connection() as db:
+            for x in db.execute(
+                    f"SELECT id, prediction_json FROM predictions WHERE id IN ({marks})", tuple(ids)).fetchall():
+                try:
+                    preds[x["id"]] = json.loads(x["prediction_json"])
+                except Exception:
+                    preds[x["id"]] = {}
+
+    games = []
+    tot = {"games": 0, "w_hit": 0, "w_n": 0, "o_hit": 0, "o_n": 0,
+           "g_hit": 0, "g_n": 0, "a_hit": 0, "a_n": 0}
+    for r in chosen:
+        pred = preds.get(r["id"], {})
+        hw, aw, op = float(r["home_win"] or 0), float(r["away_win"] or 0), float(r["over_55"] or 0)
+        pick_home = hw >= aw
+        game = {
+            "id": r["id"], "date": r["created_at"], "match": r["match_name"],
+            "home": r["home_team"], "away": r["away_team"],
+            "status": "done" if r["game_id"] is not None else "pending", "score": None,
+            "winner": {"pick": r["home_team"] if pick_home else r["away_team"],
+                       "pct": round(hw if pick_home else aw, 1), "hit": None},
+            "over55": {"pick": "plus" if op >= 50 else "moins",
+                       "pct": round(op if op >= 50 else 100 - op, 1), "total": None, "hit": None},
+            "goals": {"hits": 0, "n": 0, "players": []},
+            "assists": {"hits": 0, "n": 0, "players": []},
+        }
+        if r["game_id"] is not None:
+            hs, as_ = int(r["home_score"] or 0), int(r["away_score"] or 0)
+            actual = json.loads(r["players_json"] or "{}")
+            game["score"] = [hs, as_]
+            game["winner"]["hit"] = pick_home == (hs > as_)
+            game["over55"]["total"] = hs + as_
+            game["over55"]["hit"] = ((hs + as_) >= 6) == (op >= 50)
+            for name, prefix, idx in (("goals", "safe_top5_goals", 0), ("assists", "safe_top5_assists", 1)):
+                for side, abbr in (("home", r["home_team"]), ("away", r["away_team"])):
+                    for pl in pred.get(f"{prefix}_{side}", []) or []:
+                        st = actual.get(str(pl.get("player_id")))
+                        hit = None if st is None else bool(st[idx] >= 1)   # None = n'a pas joué
+                        game[name]["players"].append(
+                            {"name": pl.get("name"), "team": abbr, "prob": pl.get("prob"), "hit": hit})
+                        if hit is not None:
+                            game[name]["n"] += 1
+                            game[name]["hits"] += int(hit)
+            tot["games"] += 1
+            tot["w_n"] += 1; tot["w_hit"] += int(game["winner"]["hit"])
+            tot["o_n"] += 1; tot["o_hit"] += int(game["over55"]["hit"])
+            for k in ("g", "a"):
+                src = game["goals" if k == "g" else "assists"]
+                tot[k + "_n"] += src["n"]; tot[k + "_hit"] += src["hits"]
+        games.append(game)
+    return {"summary": tot, "games": games}
+
+@app.get("/api/results")
+def api_results(limit: int = 40):
+    """Pronostics gagnés / perdus + pourcentages de réussite."""
+    return build_results(limit)
 
 # ---------------------- ICÔNE ET MANIFEST --------------------
 
