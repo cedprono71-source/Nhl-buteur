@@ -1050,12 +1050,14 @@ def _parse_boxscore(box):
 
 def evaluate_pending(limit=50):
     """Compare les prédictions passées aux résultats réels (matchs terminés uniquement)."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
     with db_connection() as db:
         rows = db.execute("""
             SELECT p.id, p.created_at, p.home_team, p.away_team
             FROM predictions p LEFT JOIN prediction_outcomes o ON o.prediction_id = p.id
-            WHERE o.prediction_id IS NULL ORDER BY p.id DESC LIMIT ?
-        """, (int(clamp(limit, 1, 200)),)).fetchall()
+            WHERE o.prediction_id IS NULL AND p.created_at >= ?
+            ORDER BY p.id DESC LIMIT ?
+        """, (cutoff, int(clamp(limit, 1, 200)))).fetchall()
     evaluated, pending, errors = 0, 0, 0
     for row in rows:
         try:
@@ -1205,12 +1207,13 @@ def run_cron_job():
     summary = {}
     JOB_STATE.update(running=True, last_start=datetime.now(timezone.utc).isoformat())
     try:
+        # Les résultats d'abord : c'est ce que l'utilisateur attend le plus vite.
+        summary["evaluation"] = evaluate_pending(100)
         age = _last_sync_age_hours()
         if age is None or age >= SYNC_MIN_INTERVAL_HOURS:
             summary["sync"] = perform_sync()["status"]
         summary["elo"] = bool(get_elo_table())
         summary["predictions"] = predict_todays_games()
-        summary["evaluation"] = evaluate_pending(100)
     except Exception as exc:
         logger.exception("Erreur tâche automatique")
         summary["error"] = str(exc)
@@ -1487,9 +1490,25 @@ def build_results(limit=40):
         games.append(game)
     return {"summary": tot, "games": games}
 
+LAST_AUTO_EVAL = {"t": 0.0}
+
+def _background_evaluate():
+    if not JOB_LOCK.acquire(blocking=False):
+        return
+    try:
+        evaluate_pending(30)
+    except Exception:
+        logger.exception("Évaluation en arrière-plan")
+    finally:
+        JOB_LOCK.release()
+
 @app.get("/api/results")
 def api_results(limit: int = 40):
     """Pronostics gagnés / perdus + pourcentages de réussite."""
+    # Ouvrir l'historique lance une évaluation rapide en arrière-plan (sans bloquer la réponse).
+    if time.time() - LAST_AUTO_EVAL["t"] > 120:
+        LAST_AUTO_EVAL["t"] = time.time()
+        threading.Thread(target=_background_evaluate, daemon=True).start()
     return build_results(limit)
 
 # ---------------------- ICÔNE ET MANIFEST --------------------
