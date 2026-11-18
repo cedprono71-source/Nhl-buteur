@@ -426,10 +426,7 @@ function teamLabel(name,abbr) {
 }
 
 function stateLabel(match) {
- const text=String(match.game_state||"NHL");
- const matchTime=text.match(/^([0-9]{2}):[0-9]{2}$/);
- if(matchTime&&Number(matchTime[1])<7)return "🌙 "+text;
- return text;
+ return String(match.game_state||"NHL");
 }
 
 function displayError(message) {
@@ -793,6 +790,38 @@ let HIST_FILTER="all";
 const pctOf=(h,n)=>n?(h/n*100).toFixed(1)+" %":"—";
 const tickOf=hit=>hit===true?"✅":hit===false?"❌":"•";
 
+/* Normalise les valeurs 1/0/"1"/"0"/"true"/"false" en vrai booléen (sinon null) */
+const toHit=v=>v===true||v===1||v==="1"||v==="true"?true
+ :v===false||v===0||v==="0"||v==="false"?false:null;
+
+/* Dédoublonne les matchs (même match + même jour) et normalise les ✅/❌.
+   Garde le match terminé plutôt que « en attente ». */
+function cleanGames(games) {
+ const seen=new Map();
+ games.forEach(g=>{
+  if(g.winner)g.winner.hit=toHit(g.winner.hit);
+  if(g.over55)g.over55.hit=toHit(g.over55.hit);
+  ["goals","assists"].forEach(k=>(g[k]?.players||[]).forEach(p=>{p.hit=toHit(p.hit);}));
+  const key=String(g.match||"").trim().toLowerCase()+"|"+String(g.date||"").slice(0,10);
+  const prev=seen.get(key);
+  if(!prev||(prev.status!=="done"&&g.status==="done"))seen.set(key,g);
+ });
+ return [...seen.values()];
+}
+
+/* Recalcule le résumé à partir des matchs dédoublonnés (le résumé du serveur compte les doublons) */
+function computeSummary(games) {
+ const done=games.filter(g=>g.status==="done");
+ const s={games:done.length,w_hit:0,w_n:0,o_hit:0,o_n:0,g_hit:0,g_n:0,a_hit:0,a_n:0};
+ done.forEach(g=>{
+  if(g.winner&&g.winner.hit!==null){s.w_n++;if(g.winner.hit)s.w_hit++;}
+  if(g.over55&&g.over55.hit!==null){s.o_n++;if(g.over55.hit)s.o_hit++;}
+  if(g.goals){s.g_hit+=Number(g.goals.hits)||0;s.g_n+=Number(g.goals.n)||0;}
+  if(g.assists){s.a_hit+=Number(g.assists.hits)||0;s.a_n+=Number(g.assists.n)||0;}
+ });
+ return s;
+}
+
 function renderSummary(s) {
  const cell=(label,h,n)=>`
  <div class="hs">
@@ -837,7 +866,9 @@ function historyCard(g,index) {
  ?`${escapeHtml(g.home)} <b>${g.score[0]}</b> – <b>${g.score[1]}</b> ${escapeHtml(g.away)}`
  :escapeHtml(g.match);
  const pill=!done?'<span class="hpill p">⏳ EN ATTENTE</span>'
- :g.winner.hit?'<span class="hpill w">✅ GAGNÉ</span>':'<span class="hpill l">❌ PERDU</span>';
+ :g.winner.hit===true?'<span class="hpill w">✅ GAGNÉ</span>'
+ :g.winner.hit===false?'<span class="hpill l">❌ PERDU</span>'
+ :'<span class="hpill p">• N/A</span>';
  const overLine=done
  ?`Buts : <b>${g.over55.pick==="plus"?"Plus":"Moins"} de 5,5</b> (${g.over55.pct} %) → ${g.over55.total} buts ${tickOf(g.over55.hit)}`
  :`Buts : <b>${g.over55.pick==="plus"?"Plus":"Moins"} de 5,5</b> (${g.over55.pct} %)`;
@@ -895,13 +926,13 @@ async function loadHistory() {
 
   if(!response.ok)throw new Error(data.detail||`Erreur HTTP ${response.status}`);
 
-  HIST_GAMES=data.games||[];
+  HIST_GAMES=cleanGames(data.games||[]);
   if(!HIST_GAMES.length) {
    list.innerHTML='<div class="text-center py-8 rounded-xl">Aucune prédiction enregistrée pour le moment.</div>';
    return;
   }
 
-  renderSummary(data.summary);
+  renderSummary(computeSummary(HIST_GAMES));
   renderFilters();
   renderHistory();
  } catch(err) {
