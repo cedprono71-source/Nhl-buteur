@@ -22,12 +22,12 @@ from pydantic import BaseModel, Field
 from scipy.stats import nbinom, poisson
 
 # ============================================================
-# NHL GOALSCORER ANALYTICS - VERSION 39.72
+# NHL GOALSCORER ANALYTICS - VERSION 39.73
 # Adapté pour Vercel : plus de boucle de fond au démarrage.
 # Les mises à jour automatiques passent par GitHub Actions.
 # ============================================================
 
-VERSION = "39.72"
+VERSION = "39.73"
 DB_FILE = os.getenv("DB_FILE", "nhl_history.db")
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()   # si défini : PostgreSQL externe (ex. Neon), sinon SQLite local
 USE_PG = bool(DATABASE_URL)
@@ -38,6 +38,7 @@ MAX_WORKERS = 8
 CRON_SECRET = os.getenv("CRON_SECRET", "")              # si défini, /api/cron exige ?key=...
 AUTO_PREDICT_HOURS_AHEAD = int(os.getenv("AUTO_PREDICT_HOURS_AHEAD", "10"))
 SYNC_MIN_INTERVAL_HOURS = 6
+DEDUPE_WINDOW_HOURS = 20    # deux prédictions de la même affiche dans cette fenêtre = même match
 LEAGUE_SH_PCT = 0.105   # % de réussite moyen des tirs (régression vers la moyenne)
 SH_PRIOR_SHOTS = 60      # poids de la moyenne ligue, en tirs
 TOI_FACTOR_RANGE = (0.90, 1.10)
@@ -229,17 +230,38 @@ def init_database():
         """)
         db.commit()
 
+def _parse_ts(value):
+    """Lit une date ISO (avec ou sans fuseau) et la renvoie toujours en UTC."""
+    dt = datetime.fromisoformat(str(value))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
 def save_prediction(result):
+    """Enregistre une prédiction, sauf si cette affiche a déjà été prédite récemment
+    (même match = un seul enregistrement : on garde la première prédiction, faite avant le coup d'envoi)."""
     try:
         p = result["match_prediction"]
+        now = datetime.now(timezone.utc)
         with db_connection() as db:
+            recent = db.execute(
+                "SELECT created_at FROM predictions WHERE home_team=? AND away_team=? "
+                "ORDER BY id DESC LIMIT 5", (result["home_team"], result["away_team"])
+            ).fetchall()
+            for r in recent:
+                try:
+                    age_h = abs((now - _parse_ts(r["created_at"])).total_seconds()) / 3600
+                except Exception:
+                    continue
+                if age_h < DEDUPE_WINDOW_HOURS:
+                    return  # déjà enregistré : pas de doublon
             db.execute("""
                 INSERT INTO predictions
                 (created_at, match_name, home_team, away_team, home_xg, away_xg,
                  home_win, away_win, over_55, prediction_json)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                datetime.now(timezone.utc).isoformat(), result["match"],
+                now.isoformat(), result["match"],
                 result["home_team"], result["away_team"],
                 p["expected_goals_home"], p["expected_goals_away"],
                 p["home_win_pct_value"], p["away_win_pct_value"],
@@ -248,6 +270,52 @@ def save_prediction(result):
             db.commit()
     except Exception:
         logger.exception("Erreur sauvegarde prédiction")
+
+def dedupe_predictions():
+    """Nettoie les doublons déjà présents : pour une même affiche dans une fenêtre de
+    DEDUPE_WINDOW_HOURS, garde la ligne évaluée (sinon la plus ancienne) et supprime le reste."""
+    with db_connection() as db:
+        rows = db.execute("""
+            SELECT p.id, p.home_team, p.away_team, p.created_at,
+                   CASE WHEN o.prediction_id IS NULL THEN 0 ELSE 1 END AS has_outcome
+            FROM predictions p LEFT JOIN prediction_outcomes o ON o.prediction_id = p.id
+        """).fetchall()
+    rows = [dict(r) for r in rows]
+    by_pair = {}
+    for r in rows:
+        try:
+            r["ts"] = _parse_ts(r["created_at"])
+        except Exception:
+            continue
+        by_pair.setdefault((r["home_team"], r["away_team"]), []).append(r)
+
+    to_delete = []
+    window = timedelta(hours=DEDUPE_WINDOW_HOURS)
+    for items in by_pair.values():
+        items.sort(key=lambda r: r["ts"])
+        cluster = []
+        clusters = []
+        for r in items:
+            if cluster and r["ts"] - cluster[0]["ts"] > window:
+                clusters.append(cluster)
+                cluster = []
+            cluster.append(r)
+        if cluster:
+            clusters.append(cluster)
+        for cl in clusters:
+            if len(cl) < 2:
+                continue
+            keep = next((r for r in cl if r["has_outcome"]), cl[0])
+            to_delete.extend(r["id"] for r in cl if r["id"] != keep["id"])
+
+    for i in range(0, len(to_delete), 200):
+        chunk = tuple(to_delete[i:i + 200])
+        marks = ",".join("?" for _ in chunk)
+        with db_connection() as db:
+            db.execute(f"DELETE FROM prediction_outcomes WHERE prediction_id IN ({marks})", chunk)
+            db.execute(f"DELETE FROM predictions WHERE id IN ({marks})", chunk)
+            db.commit()
+    return {"deleted": len(to_delete), "total_before": len(rows)}
 
 # ---------------------- TEAM DATA ---------------------------
 
@@ -952,7 +1020,7 @@ FINAL_STATES = ("FINAL", "OFF")
 
 def _find_final_game(home_abbr, away_abbr, created_at_iso):
     """Cherche le match terminé correspondant à une prédiction (None si pas encore joué)."""
-    created = datetime.fromisoformat(created_at_iso)
+    created = _parse_ts(created_at_iso)
     for offset in (0, 1, 2):
         day = (created + timedelta(days=offset)).strftime("%Y-%m-%d")
         data = fetch_nhl_score(day)
@@ -1113,7 +1181,7 @@ def predict_todays_games(hours_ahead=AUTO_PREDICT_HOURS_AHEAD):
                         "ORDER BY id DESC LIMIT 10", (home, away)
                     ).fetchall()
                 window_start = start - timedelta(hours=24)
-                if any(window_start <= datetime.fromisoformat(r["created_at"]) < start for r in recent):
+                if any(window_start <= _parse_ts(r["created_at"]) < start for r in recent):
                     skipped += 1
                     continue
                 build_match_prediction(MatchRequest(home_team=home, away_team=away))
@@ -1128,7 +1196,7 @@ def _last_sync_age_hours():
         row = db.execute("SELECT created_at FROM sync_history ORDER BY id DESC LIMIT 1").fetchone()
     if not row:
         return None
-    return (datetime.now(timezone.utc) - datetime.fromisoformat(row["created_at"])).total_seconds() / 3600
+    return (datetime.now(timezone.utc) - _parse_ts(row["created_at"])).total_seconds() / 3600
 
 def run_cron_job():
     """Tâche complète : synchro (si ancienne), Elo, prédictions du jour, évaluation des résultats."""
@@ -1267,6 +1335,17 @@ def api_cron(key: Optional[str] = None):
 def api_cron_status():
     return JOB_STATE
 
+@app.get("/api/dedupe")
+def api_dedupe(key: Optional[str] = None):
+    """À lancer UNE fois : supprime les prédictions en double déjà enregistrées (même clé que /api/cron)."""
+    if CRON_SECRET and not (key and secrets.compare_digest(key, CRON_SECRET)):
+        raise HTTPException(status_code=403, detail="Clé invalide.")
+    try:
+        return dedupe_predictions()
+    except Exception:
+        logger.exception("Erreur nettoyage des doublons")
+        raise HTTPException(status_code=500, detail="Erreur pendant le nettoyage des doublons.")
+
 @app.get("/api/elo")
 def api_elo():
     """Classement Elo des équipes (calculé sur la saison en cours + saison précédente)."""
@@ -1296,8 +1375,7 @@ def football_matches(date: Optional[str] = None):
 
 # ---------------------- RÉSULTATS : PRONOSTICS GAGNÉS / PERDUS ----
 
-def _day(value):
-    return str(value)[:10]
+PENDING_DUP_SECONDS = 24 * 3600
 
 def build_results(limit=40):
     """Historique avec le résultat réel de chaque pronostic (gagné / perdu) et des pourcentages."""
@@ -1313,28 +1391,40 @@ def build_results(limit=40):
         """, (limit * 4,)).fetchall()
     rows = [dict(r) for r in rows]
 
-    # Une seule ligne par match : la plus récente prédiction (les doublons sont ignorés)
-    chosen, seen_games, done_days = [], set(), set()
+    # Matchs terminés : une seule ligne par match (la plus récente prédiction évaluée).
+    # On garde aussi toutes les dates de prédictions évaluées pour repérer les doublons « en attente ».
+    chosen, seen_games = [], set()
+    done_times = {}
     for r in rows:
-        if r["game_id"] is None or r["game_id"] in seen_games:
+        if r["game_id"] is None:
+            continue
+        pair = (r["home_team"], r["away_team"])
+        try:
+            done_times.setdefault(pair, []).append(_parse_ts(r["created_at"]))
+        except Exception:
+            pass
+        if r["game_id"] in seen_games:
             continue
         seen_games.add(r["game_id"])
         chosen.append(r)
-        done_days.add((r["home_team"], r["away_team"], _day(r["created_at"])))
 
-    # Matchs encore en attente (prédictions récentes sans résultat)
+    # Matchs encore en attente (prédictions récentes sans résultat), sans doublon
+    # ni copie d'un match déjà terminé.
     cutoff = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
-    seen_pending = set()
+    pending_times = {}
     for r in rows:
         if r["game_id"] is not None or str(r["created_at"]) < cutoff:
             continue
-        d0 = datetime.strptime(_day(r["created_at"]), "%Y-%m-%d")
-        near = {(r["home_team"], r["away_team"], (d0 + timedelta(days=k)).strftime("%Y-%m-%d"))
-                for k in (-1, 0, 1)}
-        key = (r["home_team"], r["away_team"], _day(r["created_at"]))
-        if near & done_days or key in seen_pending:
+        pair = (r["home_team"], r["away_team"])
+        try:
+            t = _parse_ts(r["created_at"])
+        except Exception:
             continue
-        seen_pending.add(key)
+        if any(abs((t - x).total_seconds()) <= PENDING_DUP_SECONDS for x in done_times.get(pair, [])):
+            continue
+        if any(abs((t - x).total_seconds()) <= PENDING_DUP_SECONDS for x in pending_times.get(pair, [])):
+            continue
+        pending_times.setdefault(pair, []).append(t)
         chosen.append(r)
 
     chosen.sort(key=lambda r: r["id"], reverse=True)
