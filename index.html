@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#050b18">
 <title>NHL GoalScorer Analytics 39.73</title>
+<script>
+try{document.documentElement.setAttribute("data-theme",localStorage.getItem("nhl-theme")==="light"?"light":"dark");}
+catch(e){document.documentElement.setAttribute("data-theme","dark");}
+</script>
 <script src="https://cdn.tailwindcss.com"></script>
 
 <style>
@@ -67,8 +71,9 @@ input[type=date] {
 #refresh-btn {
  background:linear-gradient(135deg,#ef263d,#a90025)!important;
  box-shadow:0 0 12px #ef263d66;
+ color:#fff;
 }
-#history-btn {
+#history-btn,#theme-btn {
  background:#102440!important;
  color:white!important;
  border:1px solid #1764a5!important;
@@ -142,19 +147,6 @@ input[type=date] {
  background:linear-gradient(90deg,#ef263d,#00aaff)!important;
 }
 
-#safe-top5 section {
- background:linear-gradient(145deg,#07372f,#09251f)!important;
- border:1px solid #10b981!important;
- border-radius:19px!important;
- box-shadow:0 0 18px #10b98122;
- padding:16px!important;
-}
-#safe-top5 section * {color:#d1fae5!important}
-#safe-top5 section .text-red-400 {color:#ff4055!important}
-#safe-top5 section .bg-amber-500 {background:#f59e0b!important}
-#safe-top5 section .border-t {border-color:#176653!important}
-
-#extra-data .text-green-400 {color:#34d399!important}
 #close-modal,#close-history {color:#c5e5ff!important}
 #history-list > button:hover {border-color:#00bfff!important}
 
@@ -209,6 +201,105 @@ button:focus-visible,input:focus-visible {
  #modal section,#history-modal section {border-radius:18px!important}
  #modal .p-3 {padding:12px!important}
 }
+
+/* =================== MODE JOUR =================== */
+html[data-theme=light] {color-scheme:light}
+html[data-theme=light] * {scrollbar-color:#7bb6f5 #eaf3ff}
+html[data-theme=light] body {
+ background:radial-gradient(ellipse at 50% 0%,#cfe4ff 0%,transparent 50%),linear-gradient(180deg,#eef5ff,#f8fbff 75%)!important;
+ color:#0b1b33!important;
+}
+html[data-theme=light] header {
+ background:linear-gradient(110deg,#ffffff,#e3efff,#ffffff)!important;
+ box-shadow:0 4px 18px #087cff30!important;
+}
+html[data-theme=light] header h1 {color:#0a63c9!important;text-shadow:none}
+html[data-theme=light] header .text-white {color:#0b1b33!important}
+html[data-theme=light] header .text-slate-400 {color:#4a6a92!important}
+html[data-theme=light] #api-status,
+html[data-theme=light] #loading,
+html[data-theme=light] #no-matches {color:#3d5a80!important}
+
+html[data-theme=light] #matches-container > button {
+ background:linear-gradient(145deg,#ffffff,#eaf3ff)!important;
+ border:1px solid #b7d3f2!important;
+ color:#0b1b33!important;
+ box-shadow:0 4px 14px #0a3a7a22!important;
+}
+html[data-theme=light] #matches-container > button:hover {
+ border-color:#087cff!important;
+ box-shadow:0 0 16px #087cff44!important;
+}
+html[data-theme=light] #matches-container img {filter:drop-shadow(0 2px 4px #0a3a7a33)}
+html[data-theme=light] #matches-container button span.rounded-full {
+ background:#dcebff;color:#0b3a73;border-color:#7bb6f5;
+}
+html[data-theme=light] #matches-container button .text-red-500 {color:#0a6fe0!important}
+html[data-theme=light] #matches-container button .text-slate-400 {color:#4a6a92!important}
+
+html[data-theme=light] input[type=date] {
+ background:#fff!important;color:#0b1b33!important;border:1px solid #9cc3ee!important;
+}
+html[data-theme=light] #history-btn,
+html[data-theme=light] #theme-btn {
+ background:#fff!important;color:#0b1b33!important;border:1px solid #9cc3ee!important;
+}
+
+html[data-theme=light] #modal,
+html[data-theme=light] #history-modal {background:#1b2f4fb3!important}
+html[data-theme=light] #modal section,
+html[data-theme=light] #history-modal section {
+ background:linear-gradient(160deg,#ffffff,#eef5ff)!important;
+ border:1px solid #087cff!important;
+ box-shadow:0 0 30px #087cff30!important;
+}
+html[data-theme=light] #modal section > div:first-child,
+html[data-theme=light] #history-modal section > div:first-child {
+ background:linear-gradient(110deg,#e3efff,#f3f8ff)!important;
+ border-color:#b7d3f2!important;
+}
+html[data-theme=light] #modal-teams {color:#0b1b33!important}
+html[data-theme=light] #modal .border,
+html[data-theme=light] #history-modal .border {border-color:#b7d3f2!important}
+html[data-theme=light] #modal [role=tablist] {background:#dbe9fb!important}
+html[data-theme=light] #modal .text-slate-400,
+html[data-theme=light] #history-modal .text-slate-400,
+html[data-theme=light] #modal .text-slate-500,
+html[data-theme=light] #history-modal .text-slate-500 {color:#4a6a92!important}
+html[data-theme=light] #modal .text-slate-300 {color:#2c4a73!important}
+
+html[data-theme=light] #pred-home-win {color:#d11a33!important;text-shadow:none}
+html[data-theme=light] #pred-away-win {color:#0a6fe0!important;text-shadow:none}
+html[data-theme=light] #bar-home {background:linear-gradient(90deg,#ff3a55,#d11a33)!important}
+html[data-theme=light] #bar-away {background:linear-gradient(90deg,#087cff,#00a8e8)!important}
+html[data-theme=light] #modal .bg-slate-700 {background:#cfe0f5!important}
+
+html[data-theme=light] #players-container article,
+html[data-theme=light] #extra-data > div,
+html[data-theme=light] #history-list > button,
+html[data-theme=light] #history-list > article {
+ background:linear-gradient(145deg,#ffffff,#eef5ff)!important;
+ border:1px solid #b7d3f2!important;
+ color:#0b1b33!important;
+ box-shadow:0 3px 10px #0a3a7a1a;
+}
+html[data-theme=light] #players-container article .bg-slate-700 {background:#dcebff!important;color:#0b3a73}
+html[data-theme=light] #players-container .text-red-400 {color:#d11a33!important}
+html[data-theme=light] #close-modal,
+html[data-theme=light] #close-history {color:#1d3a63!important}
+
+html[data-theme=light] .hf {background:#fff;border-color:#9cc3ee;color:#1d3a63}
+html[data-theme=light] .hf.on {background:linear-gradient(110deg,#087cff,#0a5fd0);border-color:#2f9bff;color:#fff}
+html[data-theme=light] .hs {background:#fff;border-color:#b7d3f2}
+html[data-theme=light] .hs .l,html[data-theme=light] .hs .d {color:#4a6a92}
+html[data-theme=light] .hs .v {color:#0a6fe0}
+html[data-theme=light] .hpill.w {background:#d3f5e3;color:#0b6b3c}
+html[data-theme=light] .hpill.l {background:#ffdce3;color:#a3142c}
+html[data-theme=light] .hpill.p {background:#e3ebf7;color:#3d5a80}
+html[data-theme=light] .hchip {border-color:#b7c8e0;color:#3d5a80}
+html[data-theme=light] .hchip.y {border-color:#10a371;color:#0b6b3c}
+html[data-theme=light] .hchip.n {border-color:#e0425e;color:#a3142c}
+html[data-theme=light] #history-list summary {color:#0a6fe0!important}
 </style>
 </head>
 
@@ -225,6 +316,7 @@ button:focus-visible,input:focus-visible {
 <input type="date" id="date-picker" class="px-2 py-2 rounded-lg border text-sm">
 <button id="refresh-btn" aria-label="Actualiser" class="w-10 h-10 rounded-lg text-lg font-bold">⟳</button>
 <button id="history-btn" aria-label="Historique" class="w-10 h-10 rounded-lg text-lg border">📜</button>
+<button id="theme-btn" aria-label="Changer de mode" class="w-10 h-10 rounded-lg text-lg border">☀️</button>
 </div>
 </div>
 </header>
@@ -290,7 +382,6 @@ Score statistique le plus probable :
 <button id="btn-away" class="flex-1 py-3 text-sm font-bold rounded-lg" role="tab" aria-selected="false">Extérieur</button>
 </div>
 
-<div id="safe-top5" class="space-y-2"></div>
 <div id="players-container" class="space-y-3" aria-live="polite"></div>
 <div id="extra-data" class="space-y-3"></div>
 </div>
@@ -323,6 +414,22 @@ let activeStatType = "goals";
 let selectedMatch = null;
 let matchesRequestController = null;
 let predictionRequestController = null;
+
+/* ---------- Mode jour / nuit ---------- */
+function applyTheme(theme) {
+ document.documentElement.setAttribute("data-theme",theme);
+ const btn=$("theme-btn");
+ btn.textContent=theme==="light"?"🌙":"☀️";
+ btn.setAttribute("aria-label",theme==="light"?"Passer en mode nuit":"Passer en mode jour");
+ document.querySelectorAll('meta[name="theme-color"]').forEach(m=>
+  m.setAttribute("content",theme==="light"?"#eaf3ff":"#050b18"));
+}
+applyTheme(document.documentElement.getAttribute("data-theme")==="light"?"light":"dark");
+$("theme-btn").addEventListener("click",()=>{
+ const next=document.documentElement.getAttribute("data-theme")==="light"?"dark":"light";
+ applyTheme(next);
+ try{localStorage.setItem("nhl-theme",next);}catch(e){}
+});
 
 const today = new Date();
 const localDate = new Date(today.getTime() - today.getTimezoneOffset()*60000).toISOString().slice(0,10);
@@ -430,7 +537,6 @@ function stateLabel(match) {
 }
 
 function displayError(message) {
- $("safe-top5").innerHTML="";
  $("players-container").innerHTML=`
  <div class="rounded-xl border border-red-800 bg-red-950 p-5 text-center">
  <div class="text-3xl mb-2">⚠️</div>
@@ -459,7 +565,6 @@ function resetPredictionModal(title="Analyse du match") {
  setWinBar(50,50);
  $("players-container").innerHTML='<div class="text-center py-10 text-slate-400">Calcul des probabilités et récupération des statistiques NHL…</div>';
  $("extra-data").innerHTML="";
- $("safe-top5").innerHTML="";
  setActiveButton("btn-home",true);
  setActiveButton("btn-away",false);
 }
@@ -652,15 +757,8 @@ function renderPlayers() {
  ?(activeModalTab==="home"?"top_goalscorers_home":"top_goalscorers_away")
  :(activeModalTab==="home"?"top_playmakers_home":"top_playmakers_away");
 
- const safeKey=activeStatType==="goals"
- ?(activeModalTab==="home"?"safe_top5_goals_home":"safe_top5_goals_away")
- :(activeModalTab==="home"?"safe_top5_assists_home":"safe_top5_assists_away");
-
  const players=currentMatchData[key]||[];
- const safePlayers=currentMatchData[safeKey]||[];
-
  const container=$("players-container");
- const safeContainer=$("safe-top5");
 
  const confidenceBadge=p=>{
   const level=p.confidence;
@@ -668,26 +766,6 @@ function renderPlayers() {
   const label=level==="high"?"Confiance élevée":level==="medium"?"Confiance moyenne":"Risqué";
   return `<span class="inline-flex items-center gap-1 text-xs font-semibold text-slate-300"><span class="inline-block w-2.5 h-2.5 rounded-full ${dot}"></span>${label}</span>`;
  };
-
- safeContainer.innerHTML=safePlayers.length?`
- <section class="rounded-xl border p-3">
- <div class="flex items-center justify-between gap-2 mb-2">
- <div class="font-extrabold">🛡️ TOP 5 — MODE SÉCURITÉ</div>
- <span class="text-[11px] font-bold">39.73</span>
- </div>
- <div class="text-xs mb-2">Tri selon probabilité estimée, régularité et forme récente.</div>
- ${safePlayers.map((p,i)=>`
- <div class="flex items-center justify-between gap-2 py-2 border-t border-emerald-900">
- <div class="min-w-0">
- <div class="font-bold text-sm">${i+1}. ${escapeHtml(p.name)}</div>
- <div class="text-xs">${escapeHtml(p.stats)} • Score sécurité ${p.security_score??"—"}/100</div>
- </div>
- <div class="text-right shrink-0">
- <div class="font-extrabold text-red-400">${escapeHtml(p.prob)}</div>
- ${confidenceBadge(p)}
- </div>
- </div>`).join("")}
- </section>`:"";
 
  if(!players.length) {
   container.innerHTML='<div class="text-center py-8 text-slate-400 rounded-xl">Aucune statistique joueur disponible pour cette équipe pour le moment.</div>';
@@ -724,44 +802,14 @@ function renderPlayers() {
 function renderExtraData() {
  if(!currentMatchData)return;
 
- const goalies=activeModalTab==="home"?currentMatchData.goalies_home:currentMatchData.goalies_away;
  const teamStats=currentMatchData.team_stats?.[activeModalTab];
- const values=currentMatchData.value_analysis||{};
 
  $("extra-data").innerHTML=`
- <div class="grid sm:grid-cols-2 gap-3">
- <div class="border rounded-xl p-3">
- <div class="font-bold text-sm mb-2">🥅 Gardiens de l'équipe</div>
- ${(goalies||[]).length
- ?goalies.map(g=>`
- <div class="text-xs py-1 border-b border-slate-700">
- ${escapeHtml(g.name)} — % arrêts : ${g.save_pct??"—"} • GAA : ${g.gaa??"—"}
- </div>`).join("")
- :'<div class="text-xs text-slate-400">Données gardiens indisponibles.</div>'}
- </div>
-
  <div class="border rounded-xl p-3">
  <div class="font-bold text-sm mb-2">📊 Statistiques équipe</div>
  <div class="text-xs text-slate-300">
  ${teamStats?`${teamStats.goals_per_game} buts/match sur ${teamStats.games} matchs`:"Statistiques indisponibles."}
  </div>
- </div>
- </div>
-
- <div class="border rounded-xl p-3">
- <div class="font-bold text-sm mb-2">💎 Analyse de value</div>
- ${[
- ["Victoire domicile",values.home_win],
- ["Victoire extérieur",values.away_win],
- ["Over 5.5",values.over_5_5]
- ].map(([label,v])=>`
- <div class="flex justify-between gap-2 text-xs py-2 border-b border-slate-700 last:border-0">
- <span>${label}</span>
- <span class="${v?.value_detected?"text-green-400 font-bold":"text-slate-400"}">
- ${v?.value_detected?"Value potentielle":(v?.message||"Non calculée")}
- ${v?.value_percent!=null?` (${v.value_percent}%)`:""}
- </span>
- </div>`).join("")}
  </div>
 
  <div class="text-xs text-slate-500 text-center">
@@ -956,7 +1004,6 @@ async function openHistoryDetail(row) {
  setWinBar(50,50);
  $("players-container").innerHTML='<div class="text-center py-10 text-slate-400">Chargement de la prédiction…</div>';
  $("extra-data").innerHTML="";
- $("safe-top5").innerHTML="";
  setActiveButton("btn-home",true);
  setActiveButton("btn-away",false);
  setStatTabState("goals");
