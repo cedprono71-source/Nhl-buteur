@@ -2,7 +2,7 @@ name: Mise a jour NHL
 
 on:
   schedule:
-    - cron: "0 * * * *"
+    - cron: "*/30 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -10,6 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - name: Evaluer les resultats via Vercel
+        run: curl -fsS --max-time 60 "https://nhl-buteur-4xc3.vercel.app/api/evaluate?limit=100"
+        continue-on-error: true
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
